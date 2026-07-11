@@ -1,0 +1,20 @@
+{
+    "idf.adapterTargetName": "esp32s3",
+    "idf.portWin": "COM27",
+    "files.associations": {
+        "lcd.h": "c",
+        "lvgl.h": "c",
+        "gpio.h": "c",
+        "esp32wifi.h": "c",
+        "esp_wifi.h": "c",
+        "esp_event.h": "c",
+        "wifi.h": "c",
+        "cstdint": "cpp",
+        "stdlib.h": "c",
+        "chrono": "c",
+        "variant": "c",
+        "task.h": "c",
+        "led_ws2812.h": "c"
+    },
+    "idf.flashType": "UART"
+}

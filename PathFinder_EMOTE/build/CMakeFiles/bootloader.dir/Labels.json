@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/CMakeFiles/bootloader"
+		},
+		{
+			"file" : "/Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/CMakeFiles/bootloader.rule"
+		},
+		{
+			"file" : "/Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/CMakeFiles/bootloader-complete.rule"
+		},
+		{
+			"file" : "/Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule"
+		},
+		{
+			"file" : "/Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule"
+		},
+		{
+			"file" : "/Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule"
+		},
+		{
+			"file" : "/Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule"
+		},
+		{
+			"file" : "/Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule"
+		},
+		{
+			"file" : "/Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule"
+		},
+		{
+			"file" : "/Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"bootloader"
+		],
+		"name" : "bootloader"
+	}
+}

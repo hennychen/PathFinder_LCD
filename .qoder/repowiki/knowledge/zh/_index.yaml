@@ -1,0 +1,65 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: main
+nodes_managed: true
+exported_at: "2026-07-09T12:30:07Z"
+modules:
+    "":
+        dir_name: PathFinder_LCD 根仓库
+        title: PathFinder_LCD 根仓库
+        scope:
+            - README.md
+            - LICENSE
+        source_files: []
+        children:
+            - esp32_lvgl_demo_app
+        depends_on: []
+        related_to: []
+    esp32_lvgl_demo_app:
+        dir_name: ESP32 LVGL GIF LED 演示应用（TK021F2699）
+        title: ESP32 LVGL GIF LED 演示应用（TK021F2699）
+        scope:
+            - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/
+        source_files: []
+        children:
+            - esp32_lvgl_demo_app/lvgl_component
+            - esp32_lvgl_demo_app/main_app
+            - esp32_lvgl_demo_app/project_build_config
+        depends_on: []
+        related_to: []
+    esp32_lvgl_demo_app/lvgl_component:
+        dir_name: LVGL 8.3.11 图形库源码（ESP-IDF managed component）
+        title: LVGL 8.3.11 图形库源码（ESP-IDF managed component）
+        scope:
+            - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/TK021F2699_ESP32_LVGL_GIF_LED/managed_components/lvgl__lvgl/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: esp32_lvgl_demo_app/main_app
+            - path: esp32_lvgl_demo_app/project_build_config
+    esp32_lvgl_demo_app/main_app:
+        dir_name: ESP32 LVGL 环形菜单与 GIF 动图演示应用
+        title: ESP32 LVGL 环形菜单与 GIF 动图演示应用
+        scope:
+            - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/TK021F2699_ESP32_LVGL_GIF_LED/main/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: esp32_lvgl_demo_app/lvgl_component
+            - path: esp32_lvgl_demo_app/project_build_config
+    esp32_lvgl_demo_app/project_build_config:
+        dir_name: ESP32 LVGL 应用构建配置
+        title: ESP32 LVGL 应用构建配置
+        scope:
+            - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/TK021F2699_ESP32_LVGL_GIF_LED/CMakeLists.txt
+            - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/TK021F2699_ESP32_LVGL_GIF_LED/sdkconfig.defaults
+            - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/TK021F2699_ESP32_LVGL_GIF_LED/partitions.csv
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: esp32_lvgl_demo_app/lvgl_component
+            - path: esp32_lvgl_demo_app/main_app

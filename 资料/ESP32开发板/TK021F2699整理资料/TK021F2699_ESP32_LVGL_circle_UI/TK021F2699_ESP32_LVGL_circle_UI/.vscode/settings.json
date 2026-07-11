@@ -1,0 +1,10 @@
+{
+    "idf.adapterTargetName": "esp32s3",
+    "idf.portWin": "COM6",
+    "files.associations": {
+        "lcd.h": "c",
+        "lvgl.h": "c",
+        "gpio.h": "c"
+    },
+    "idf.flashType": "UART"
+}

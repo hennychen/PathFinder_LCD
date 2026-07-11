@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: ""
+title: PathFinder_LCD 根仓库
+scope:
+    - README.md
+    - LICENSE
+source_files: []
+depends_on: []
+related_to: []

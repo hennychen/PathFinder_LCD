@@ -1,0 +1,12 @@
+idf_component_register(SRCS "ui_font_Alibaba_PuHuiTi_Font_48.c" "rgb_lcd_example_main.c" "lvgl_demo_ui.c" "LCD.c"
+                            "images/ui_img_534919753.c"
+                            "images/ui_img_1063244380.c"
+                            "images/ui_img_1413029994.c"
+                            "images/ui_img_1663005091.c"
+                            "images/ui_img_2128317734.c"
+                            "images/ui_img_559735659.c"
+                            "images/ui_img_608756609.c"
+                            "images/ui_img_1836530665.c"
+                            "images/ui_img_1301454848.c"
+                            "images/ui_img_1152878764.c"
+                       INCLUDE_DIRS ".")

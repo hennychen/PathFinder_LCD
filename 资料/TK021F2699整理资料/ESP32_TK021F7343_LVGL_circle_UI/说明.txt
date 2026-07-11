@@ -1,0 +1,66 @@
+RGB LCD 连接
+
+信号 ESP32-S3 		GPIO 		说明 
+PCLK 			GPIO 2 		像素时钟 
+HSYNC 			GPIO 41 		行同步 
+VSYNC 			GPIO 46 		场同步 
+DE 				GPIO 42 		数据使能 
+DATA0 (B0) 		GPIO 4 		蓝色最低位 
+DATA1 (B1) 		GPIO 5 
+DATA2 (B2) 		GPIO 6 
+DATA3 (B3) 		GPIO 7 
+DATA4 (B4) 		GPIO 15 		蓝色最高位 
+DATA5 (G0) 		GPIO 16 		绿色最低位 
+DATA6 (G1) 		GPIO 17 
+DATA7 (G2) 		GPIO 18 
+DATA8 (G3) 		GPIO 9 
+DATA9 (G4) 		GPIO 10 
+DATA10 (G5) 		GPIO 11 		绿色最高位 
+DATA11 (R0) 		GPIO 0* 		红色最低位 
+DATA12 (R1) 		GPIO 45 
+DATA13 (R2) 		GPIO 48 
+DATA14 (R3) 		GPIO 47 
+DATA15 (R4) 		GPIO 21 		红色最高位
+
+SPI 连接
+
+SPI_CS 			GPIO 1 		片选 
+SPI_SCK 			GPIO 13 		时钟 
+SPI_SDA 			GPIO 20 		数据（3线9bit模式）
+
+按键连接
+
+BUTTON 			GPIO 0 		低电平有效，内部上拉
+
+软件依赖
+
+依赖 版本 说明 
+ESP-IDF >= 4.4 		乐鑫官方开发框架 
+LVGL ~8.3.0 			通过 IDF 组件管理器自动下载
+
+
+常见问题排查
+
+屏幕不亮 
+背光未开启 检查 EXAMPLE_PIN_NUM_BK_LIGHT 和 EXAMPLE_LCD_BK_LIGHT_ON_LEVEL 配置 
+
+屏幕白屏/花屏 
+LCD初始化失败 检查 SPI 初始化接线（GPIO 1/13/20），确认驱动IC型号匹配 
+
+帧缓冲内存不足 
+PSRAM 未启用 在 menuconfig 中启用 PSRAM，确认使用 Octal PSRAM 
+
+屏幕撕裂 
+单帧缓冲无同步 启用 Avoid tearing effect 选项，或使用双帧缓冲 
+
+屏幕漂移 
+PCLK 频率过高 降低 EXAMPLE_LCD_PIXEL_CLOCK_HZ ，调整时序参数 
+
+PCLK 频率上不去 
+PSRAM 带宽限制 启用 bounce buffer，或启用 CONFIG_SPIRAM_FETCH_INSTRUCTIONS 
+
+按键无响应 
+GPIO0 冲突 GPIO0 同时用作 RGB DATA11，确认硬件是否兼容 
+
+图标显示异常 
+图片资源损坏 检查 images/ 目录下的 C 数组文件是否完整

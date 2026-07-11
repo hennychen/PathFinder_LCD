@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: esp32_lvgl_demo_app/main_app
+title: ESP32 LVGL 环形菜单与 GIF 动图演示应用
+scope:
+    - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/TK021F2699_ESP32_LVGL_GIF_LED/main/
+source_files: []
+depends_on: []
+related_to:
+    - path: esp32_lvgl_demo_app/lvgl_component
+    - path: esp32_lvgl_demo_app/project_build_config

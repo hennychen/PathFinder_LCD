@@ -1,0 +1,6 @@
+dependencies:
+  idf: ">=5.5"
+  lvgl/lvgl: "~8.3.0"
+  espressif/esp_mmap_assets: "^2.0.0"
+  espressif/esp_lv_eaf_player: "^0.3.0"
+  espressif/cjson: "^1.7.18"

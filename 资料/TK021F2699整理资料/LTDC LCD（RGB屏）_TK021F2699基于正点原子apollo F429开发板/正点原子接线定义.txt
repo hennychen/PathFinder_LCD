@@ -1,0 +1,40 @@
+与正点原子STM32F429核心板接线引脚定义：
+
+颜色线：
+R3  PH9
+R4  PH10
+R5  PH11
+R6  PH12
+R7  PG6
+
+G2  PH13
+G3  PH14
+G4  PH15
+G5  PI0
+G6  PI1
+G7  PI2
+
+B3  PG11
+B4  PI4
+B5  PI5
+B6  PI6
+B7  PI7
+
+同步信号线：
+LCD_DE           PF10
+LCD_PCLK       PG7
+LCD_HSYNC    PI10
+LCD_VSYNC    PI9
+
+初始化线：
+CS  PH7
+SCK   PH6
+MOSI  PI3
+
+背光开关：(高电平亮，也可以不接GPIO，可以接到3.3V，让LCD一直亮)
+LCD_BL PB5
+
+
+
+
+

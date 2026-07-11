@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: esp32_lvgl_demo_app/project_build_config
+title: ESP32 LVGL 应用构建配置
+scope:
+    - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/TK021F2699_ESP32_LVGL_GIF_LED/CMakeLists.txt
+    - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/TK021F2699_ESP32_LVGL_GIF_LED/sdkconfig.defaults
+    - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/TK021F2699_ESP32_LVGL_GIF_LED/partitions.csv
+source_files: []
+depends_on: []
+related_to:
+    - path: esp32_lvgl_demo_app/lvgl_component
+    - path: esp32_lvgl_demo_app/main_app

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: esp32_lvgl_demo_app
+title: ESP32 LVGL GIF LED 演示应用（TK021F2699）
+scope:
+    - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/
+source_files: []
+depends_on: []
+related_to: []
