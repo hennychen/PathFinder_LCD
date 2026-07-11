@@ -3,11 +3,20 @@ idf_component_register(
         "main.c"
         "LCD.c"
         "app_emote_assets.c"
+        "drivers/drv_aht20.c"
+        "drivers/drv_bmp280.c"
+        "drivers/drv_mpu6050.c"
+        "drivers/drv_uv_adc.c"
+        "sensor_manager.c"
+        "motion_engine.c"
+        "emote_engine.c"
     INCLUDE_DIRS
         "."
+        "drivers"
     REQUIRES
         esp_driver_gpio
         esp_driver_i2c
+        esp_adc
         esp_lcd
         esp_timer
 )

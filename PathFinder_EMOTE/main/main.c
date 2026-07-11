@@ -555,10 +555,8 @@ static void ui_create(lv_disp_t *disp)
         return;
     }
 
-    /* ---- EAF widget：居中，330×330 ---- */
+    /* ---- EAF widget：全屏，继承 lv_img 自动尺寸（数据加载后撞满 480×480）---- */
     s_eaf_obj = lv_eaf_create(scr);
-    lv_obj_set_size(s_eaf_obj, EAF_SIZE, EAF_SIZE);
-    lv_obj_align(s_eaf_obj, LV_ALIGN_CENTER, 0, 0);
     lv_obj_clear_flag(s_eaf_obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_eaf_obj, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_eaf_obj, click_cb, LV_EVENT_CLICKED, NULL);

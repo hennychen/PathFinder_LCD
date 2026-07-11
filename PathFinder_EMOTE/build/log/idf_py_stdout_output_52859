@@ -15,4 +15,4 @@ Merged 2 ELF sections.
 Successfully created ESP32-S3 image.
 Generated /Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/pathfinder_emote.bin
 [9/9] cd /Users/pm/PathFinder_LCD/PathFinder_EMOTE/build && /Users/pm/.espressif/python_env/idf6.0_py3.11_env/bin/python /Users/pm/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/partition_table/partition-table.bin /Users/pm/PathFinder_LCD/PathFinder_EMOTE/build/pathfinder_emote.bin
-pathfinder_emote.bin binary size 0x882c0 bytes. Smallest app partition is 0x400000 bytes. 0x377d40 bytes (87%) free.
+pathfinder_emote.bin binary size 0x927f0 bytes. Smallest app partition is 0x400000 bytes. 0x36d810 bytes (86%) free.

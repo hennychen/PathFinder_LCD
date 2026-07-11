@@ -700,7 +700,7 @@
     "LV_FONT_MONTSERRAT_12": false,
     "LV_FONT_MONTSERRAT_12_SUBPX": false,
     "LV_FONT_MONTSERRAT_14": true,
-    "LV_FONT_MONTSERRAT_16": false,
+    "LV_FONT_MONTSERRAT_16": true,
     "LV_FONT_MONTSERRAT_18": false,
     "LV_FONT_MONTSERRAT_20": true,
     "LV_FONT_MONTSERRAT_22": false,
