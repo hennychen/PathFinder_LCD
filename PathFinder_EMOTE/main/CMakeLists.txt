@@ -11,6 +11,9 @@ idf_component_register(
         "motion_engine.c"
         "emote_engine.c"
         "ble_gatt_server.c"
+        "wifi_config_manager.c"
+        "web_portal.c"
+        "provision_screen.c"
     INCLUDE_DIRS
         "."
         "drivers"
@@ -22,4 +25,8 @@ idf_component_register(
         esp_timer
         nvs_flash
         bt
+        esp_wifi
+        esp_http_server
+        esp_event
+        esp_netif
 )
