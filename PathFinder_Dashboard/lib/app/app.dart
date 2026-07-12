@@ -73,8 +73,8 @@ class _PathfinderAppState extends ConsumerState<PathfinderApp> {
   }
 
   void _navigateToWifiSetup(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const WifiSetupScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const WifiSetupScreen()));
   }
 }

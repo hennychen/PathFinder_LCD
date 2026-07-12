@@ -64,9 +64,7 @@ class _WifiSetupScreenState extends ConsumerState<WifiSetupScreen> {
     final isBleConnected = bleState == BleConnectionState.connected;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('WiFi 设置'),
-      ),
+      appBar: AppBar(title: const Text('WiFi 设置')),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -153,17 +151,17 @@ class _WifiSetupScreenState extends ConsumerState<WifiSetupScreen> {
                         _status == _WifiStatus.connecting
                             ? Icons.hourglass_top
                             : _status == _WifiStatus.connected
-                                ? Icons.check_circle
-                                : _status == _WifiStatus.failed
-                                    ? Icons.error
-                                    : Icons.info,
+                            ? Icons.check_circle
+                            : _status == _WifiStatus.failed
+                            ? Icons.error
+                            : Icons.info,
                         color: _status == _WifiStatus.connecting
                             ? Colors.blue
                             : _status == _WifiStatus.connected
-                                ? Colors.green
-                                : _status == _WifiStatus.failed
-                                    ? Colors.red
-                                    : Colors.grey,
+                            ? Colors.green
+                            : _status == _WifiStatus.failed
+                            ? Colors.red
+                            : Colors.grey,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -173,10 +171,10 @@ class _WifiSetupScreenState extends ConsumerState<WifiSetupScreen> {
                             color: _status == _WifiStatus.connecting
                                 ? Colors.blue
                                 : _status == _WifiStatus.connected
-                                    ? Colors.green
-                                    : _status == _WifiStatus.failed
-                                        ? Colors.red
-                                        : Colors.grey,
+                                ? Colors.green
+                                : _status == _WifiStatus.failed
+                                ? Colors.red
+                                : Colors.grey,
                           ),
                         ),
                       ),
@@ -190,9 +188,9 @@ class _WifiSetupScreenState extends ConsumerState<WifiSetupScreen> {
             // 说明文字
             Text(
               '通过 BLE 向 ESP32 发送 WiFi 配置。\n设备连接 WiFi 后将自动关闭配网模式。',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey),
               textAlign: TextAlign.center,
             ),
           ],

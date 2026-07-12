@@ -10,7 +10,11 @@ class BleWifiWriter {
   BleWifiWriter(this._ble);
 
   /// 发送 Wi-Fi 凭据到 ESP32
-  Future<void> sendWifiConfig(String deviceId, String ssid, String password) async {
+  Future<void> sendWifiConfig(
+    String deviceId,
+    String ssid,
+    String password,
+  ) async {
     final json = jsonEncode({
       'cmd': 'set_wifi',
       'ssid': ssid,
@@ -45,7 +49,10 @@ class BleWifiWriter {
       final frame = Uint8List(bytes.length + 1);
       frame[0] = 0x00;
       frame.setRange(1, 1 + bytes.length, bytes);
-      await _ble.writeCharacteristicWithoutResponse(char, value: frame.toList());
+      await _ble.writeCharacteristicWithoutResponse(
+        char,
+        value: frame.toList(),
+      );
       debugPrint('[BLE WiFi] Sent single frame: $json');
     } else {
       // 分包: 首帧 0x00 + 后续帧 0x01
@@ -61,8 +68,13 @@ class BleWifiWriter {
         frame[0] = isFirst ? 0x00 : 0x01;
         frame.setRange(1, 1 + copyLen, bytes.sublist(offset, offset + copyLen));
 
-        await _ble.writeCharacteristicWithoutResponse(char, value: frame.toList());
-        debugPrint('[BLE WiFi] Sent ${isFirst ? "first" : "continuation"} frame: $copyLen bytes');
+        await _ble.writeCharacteristicWithoutResponse(
+          char,
+          value: frame.toList(),
+        );
+        debugPrint(
+          '[BLE WiFi] Sent ${isFirst ? "first" : "continuation"} frame: $copyLen bytes',
+        );
 
         offset += copyLen;
         isFirst = false;
