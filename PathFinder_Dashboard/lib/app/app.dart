@@ -6,6 +6,7 @@ import '../features/environment/environment_screen.dart';
 import '../features/motion/motion_screen.dart';
 import '../features/emote/emote_screen.dart';
 import '../features/history/history_screen.dart';
+import '../features/wifi/wifi_setup_screen.dart';
 
 class PathfinderApp extends ConsumerStatefulWidget {
   const PathfinderApp({super.key});
@@ -39,6 +40,11 @@ class _PathfinderAppState extends ConsumerState<PathfinderApp> {
             title: Text(_titles[_currentIndex]),
             actions: [
               const BleStatusChip(),
+              IconButton(
+                icon: const Icon(Icons.wifi, size: 22),
+                onPressed: () => _navigateToWifiSetup(context),
+                tooltip: 'WiFi 设置',
+              ),
               if (_currentIndex == 0)
                 IconButton(
                   icon: const Icon(Icons.history, size: 22),
@@ -64,5 +70,11 @@ class _PathfinderAppState extends ConsumerState<PathfinderApp> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const HistoryScreen()));
+  }
+
+  void _navigateToWifiSetup(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const WifiSetupScreen()),
+    );
   }
 }

@@ -21,4 +21,9 @@ abstract class BleServiceInterface {
   Future<void> stopScan();
   Future<void> connect(String deviceId);
   Future<void> disconnect();
+
+  // Wi-Fi 配网
+  Future<void> writeWifiConfig(String ssid, String password);
+  Future<void> queryWifiStatus();
+  Future<void> resetWifiConfig();
 }
