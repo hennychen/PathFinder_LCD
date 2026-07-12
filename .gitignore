@@ -1,1 +1,23 @@
 .superpowers/
+
+# ESP32 build artifacts
+PathFinder_EMOTE/build/
+PathFinder_EMOTE/.cache/
+PathFinder_EMOTE/managed_components/
+PathFinder_EMOTE/dependencies.lock
+
+# Flutter build artifacts
+PathFinder_Dashboard/build/
+PathFinder_Dashboard/.dart_tool/
+PathFinder_Dashboard/.flutter-plugins
+PathFinder_Dashboard/.flutter-plugins-dependencies
+PathFinder_Dashboard/.packages
+PathFinder_Dashboard/ios/Pods/
+PathFinder_Dashboard/android/.gradle/
+PathFinder_Dashboard/android/local.properties
+
+# Qoder skills cache
+.qoder/skills/
+
+# OS files
+.DS_Store

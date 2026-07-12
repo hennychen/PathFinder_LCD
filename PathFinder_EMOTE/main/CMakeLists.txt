@@ -10,6 +10,7 @@ idf_component_register(
         "sensor_manager.c"
         "motion_engine.c"
         "emote_engine.c"
+        "ble_gatt_server.c"
     INCLUDE_DIRS
         "."
         "drivers"
@@ -19,4 +20,6 @@ idf_component_register(
         esp_adc
         esp_lcd
         esp_timer
+        nvs_flash
+        bt
 )

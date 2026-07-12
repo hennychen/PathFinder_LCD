@@ -53,4 +53,32 @@ esp_err_t sensor_manager_get_env(env_snapshot_t *out);
  */
 esp_err_t sensor_manager_get_imu(imu_snapshot_t *out);
 
+/* ── 校准接口 ── */
+
+/**
+ * @brief 根据已知海拔校准气压计
+ *        自动反推当地海平面气压并持久化到 NVS
+ * @param known_altitude_m 已知海拔 (m)
+ * @return ESP_OK 或错误码
+ */
+esp_err_t sensor_manager_calib_altitude(float known_altitude_m);
+
+/**
+ * @brief 设置气压偏移补偿并持久化
+ * @param offset_pa 偏移量 (Pa)
+ * @return ESP_OK 或错误码
+ */
+esp_err_t sensor_manager_calib_pressure_offset(float offset_pa);
+
+/**
+ * @brief 重置校准参数为默认值
+ * @return ESP_OK 或错误码
+ */
+esp_err_t sensor_manager_calib_reset(void);
+
+/**
+ * @brief 获取当前校准参数
+ */
+bmp280_calib_config_t sensor_manager_get_calib(void);
+
 #endif /* SENSOR_MANAGER_H */

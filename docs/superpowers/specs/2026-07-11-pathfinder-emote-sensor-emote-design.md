@@ -75,7 +75,7 @@ I2C-1 总线设备：
   └── MPU6050    @ 0x68   (6DOF 加速度+陀螺仪)
 
 UV 模拟传感器：
-  ADC1_CH3 = GPIO 3   (GUVA-S12SD 模拟输出)
+  ADC1_CH2 = GPIO 3   (GUVA-S12SD 模拟输出, GPIO4/CH3 被 LCD PIN_DATA0 占用)
 ```
 
 ### 2.3 预留引脚（Phase 2 音视频/xiaozhi）
@@ -87,7 +87,7 @@ GPIO 19, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 39, 40, 43, 44
 - **I2C-1 与触摸 I2C-0 完全隔离**：避免 LCD SPI 复用引脚时序干扰
 - **三个 I2C 传感器共用总线**：标准 400kHz，带宽充裕
 - **UV 用 ADC1**：ADC1 在 Wi-Fi 开启时仍可正常工作（为 Phase 2 xiaozhi 预留）
-- **GPIO 3 选型**：ADC1_CH3，不与任何 LCD/触摸引脚冲突
+- **GPIO 3 选型**：ADC1_CH2（ESP32-S3 映射规则: ADC1_CHn = GPIO(n+1)），GPIO4/CH3 被 LCD PIN_DATA0 占用，GPIO3 为唯一空闲 ADC 引脚
 
 ---
 

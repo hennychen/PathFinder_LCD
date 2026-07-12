@@ -369,3 +369,8 @@ motion_event_t motion_engine_process(const mpu6050_data_t *imu)
 
     return s_state.current_event;
 }
+
+motion_event_t motion_engine_get_event(void)
+{
+    return s_state.current_event;
+}

@@ -60,6 +60,11 @@ void motion_engine_get_angles(float *pitch_deg, float *roll_deg);
 void motion_engine_calibrate(void);
 
 /**
+ * @brief 获取当前运动事件
+ */
+motion_event_t motion_engine_get_event(void);
+
+/**
  * @brief 获取运动事件的优先级数值
  */
 int motion_engine_get_priority(motion_event_t evt);

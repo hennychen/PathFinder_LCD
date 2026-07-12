@@ -28,6 +28,7 @@ static const char *TAG = "drv_bmp280";
 #define BMP280_REG_CONFIG     0xF5
 #define BMP280_REG_DATA       0xF7
 #define BMP280_CHIP_ID        0x58
+#define BME280_CHIP_ID        0x60   /* BME280 兼容 (BMP280 升级版，含湿度) */
 
 /* 校准系数 (来自器件内部 OTP) */
 typedef struct {
@@ -49,6 +50,7 @@ static i2c_master_dev_handle_t s_dev   = NULL;
 static bmp280_calib_t          s_calib;
 static float                   s_t_fine = 0.0f;
 static float                   s_sea_level_pa = 101325.0f;
+static float                   s_pressure_offset_pa = 0.0f;  /* 气压偏移补偿 (Pa) */
 
 /* ── 辅助：写单字节寄存器 ── */
 static esp_err_t write_reg(uint8_t reg, uint8_t val)
@@ -127,6 +129,35 @@ void drv_bmp280_set_sea_level(float pa)
     if (pa > 0) s_sea_level_pa = pa;
 }
 
+void drv_bmp280_set_pressure_offset(float offset_pa)
+{
+    s_pressure_offset_pa = offset_pa;
+    ESP_LOGI(TAG, "气压偏移补偿已设置: %+.1f Pa", offset_pa);
+}
+
+float drv_bmp280_calc_sea_level(float known_altitude_m, float current_pressure_pa)
+{
+    /* 反推公式: P0 = P / (1 - h/44330)^5.255 */
+    if (known_altitude_m >= 44330.0f || current_pressure_pa <= 0) {
+        ESP_LOGE(TAG, "无效校准参数: alt=%.0f m, P=%.0f Pa", known_altitude_m, current_pressure_pa);
+        return 0;
+    }
+    float ratio = 1.0f - known_altitude_m / 44330.0f;
+    float p0 = current_pressure_pa / powf(ratio, 5.255f);
+    ESP_LOGI(TAG, "海拔校准: 已知海拔 %.0f m, 实测气压 %.1f Pa → 海平面气压 %.1f Pa",
+             known_altitude_m, current_pressure_pa, p0);
+    return p0;
+}
+
+void drv_bmp280_apply_calib(const bmp280_calib_config_t *calib)
+{
+    if (!calib) return;
+    if (calib->sea_level_pa > 0) s_sea_level_pa = calib->sea_level_pa;
+    s_pressure_offset_pa = calib->pressure_offset_pa;
+    ESP_LOGI(TAG, "应用校准配置: P0=%.1f Pa, offset=%+.1f Pa",
+             s_sea_level_pa, s_pressure_offset_pa);
+}
+
 esp_err_t drv_bmp280_init(i2c_master_bus_handle_t bus, uint8_t addr)
 {
     if (bus == NULL) return ESP_ERR_INVALID_ARG;
@@ -149,10 +180,13 @@ esp_err_t drv_bmp280_init(i2c_master_bus_handle_t bus, uint8_t addr)
         ESP_LOGE(TAG, "读取 chip ID 失败");
         return ret;
     }
-    if (chip_id != BMP280_CHIP_ID) {
-        ESP_LOGE(TAG, "芯片 ID 不匹配: 0x%02X (期望 0x%02X)", chip_id, BMP280_CHIP_ID);
+    if (chip_id != BMP280_CHIP_ID && chip_id != BME280_CHIP_ID) {
+        ESP_LOGE(TAG, "芯片 ID 不匹配: 0x%02X (期望 BMP280=0x%02X 或 BME280=0x%02X)",
+                 chip_id, BMP280_CHIP_ID, BME280_CHIP_ID);
         return ESP_ERR_NOT_FOUND;
     }
+    ESP_LOGI(TAG, "检测到芯片 ID: 0x%02X (%s)", chip_id,
+             chip_id == BME280_CHIP_ID ? "BME280" : "BMP280");
 
     /* 软复位 */
     ret = write_reg(BMP280_REG_RESET, 0xB6);
@@ -190,7 +224,7 @@ esp_err_t drv_bmp280_read(bmp280_data_t *out)
     int32_t raw_T = ((int32_t)d[3] << 12) | ((int32_t)d[4] << 4) | (d[5] >> 4);
 
     out->temperature = compensate_temperature(raw_T);
-    out->pressure    = compensate_pressure(raw_P);
+    out->pressure    = compensate_pressure(raw_P) + s_pressure_offset_pa;
 
     /* 海拔换算: h = 44330 × (1 − (P/P0)^(1/5.255)) */
     if (out->pressure > 0 && s_sea_level_pa > 0) {

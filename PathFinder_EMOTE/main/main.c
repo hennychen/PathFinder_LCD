@@ -31,6 +31,7 @@
 #include "sensor_manager.h"
 #include "motion_engine.h"
 #include "emote_engine.h"
+#include "ble_gatt_server.h"
 
 static const char *TAG = "emote";
 
@@ -114,6 +115,20 @@ typedef enum {
     ALERT_URGENT,         /* 红色紧急 (碰撞/急刹车) */
 } alert_level_t;
 
+/* ===================== 明细页布局参数 ===================== */
+#define DETAIL_ROW_H            38     /* 数据行间距 */
+#define DETAIL_ROW_START_Y      108    /* 首行 Y 坐标 */
+#define DETAIL_TITLE_Y          58     /* 标题 Y 坐标 */
+#define DETAIL_MAX_ROWS         8      /* 最大数据行数 */
+#define DETAIL_NAME_X           85     /* 名称列左边距 */
+#define DETAIL_VALUE_X          85     /* 数值列右边距 */
+
+typedef enum {
+    DETAIL_NONE = 0,      /* 未打开明细页 */
+    DETAIL_ENV,           /* 环境传感器明细 */
+    DETAIL_MOTION,        /* 运动传感器明细 */
+} detail_page_t;
+
 /* ===================== 全局变量 ===================== */
 static SemaphoreHandle_t s_lvgl_mux = NULL;
 static i2c_master_bus_handle_t s_touch_i2c_bus;
@@ -135,6 +150,32 @@ static alert_level_t   s_alert_level   = ALERT_NONE;
 static int64_t         s_overlay_shown_at_us = 0;
 static lv_anim_t       s_pulse_anim;
 static bool             s_pulse_active = false;
+
+/* 明细页状态 */
+static detail_page_t s_detail_mode  = DETAIL_NONE;
+static lv_obj_t     *s_detail_scr   = NULL;   /* 全屏覆盖容器 */
+static lv_obj_t     *s_detail_title = NULL;
+static lv_obj_t     *s_detail_names[DETAIL_MAX_ROWS];
+static lv_obj_t     *s_detail_values[DETAIL_MAX_ROWS];
+static lv_obj_t     *s_detail_back  = NULL;
+
+/* 校准模式状态 */
+static bool             s_calib_mode = false;
+static float            s_calib_altitude = 0;    /* 用户调节的已知海拔 */
+static lv_obj_t        *s_calib_lbl_alt   = NULL; /* 海拔显示 */
+static lv_obj_t        *s_calib_lbl_p0    = NULL; /* 反推 P0 显示 */
+static lv_obj_t        *s_calib_btn_minus = NULL;
+static lv_obj_t        *s_calib_btn_plus  = NULL;
+static lv_obj_t        *s_calib_btn_ok    = NULL;
+static lv_obj_t        *s_calib_btn_reset = NULL;
+static lv_obj_t        *s_calib_hint      = NULL;
+
+/* 校准回调前向声明 */
+static void calib_minus_cb(lv_event_t *e);
+static void calib_plus_cb(lv_event_t *e);
+static void calib_ok_cb(lv_event_t *e);
+static void calib_reset_cb(lv_event_t *e);
+static void calib_enter_cb(lv_event_t *e);
 
 /* ===================== LVGL 互斥锁 ===================== */
 static bool lvgl_lock(int timeout_ms)
@@ -424,6 +465,390 @@ static void overlay_clear_alert(void)
     s_overlay_shown_at_us = esp_timer_get_time();
 }
 
+/* ===================== 明细数据页 ===================== */
+
+static int64_t s_last_detail_update_us = 0;
+
+/* 返回回调：隐藏明细页，恢复胶囊显示计时 */
+static void detail_back_cb(lv_event_t *e)
+{
+    (void)e;
+    s_detail_mode = DETAIL_NONE;
+    lv_obj_add_flag(s_detail_scr, LV_OBJ_FLAG_HIDDEN);
+    /* 重置胶囊计时器，返回后给用户 3 秒过渡 */
+    if (s_overlay_state == OVERLAY_SHOWN) {
+        s_overlay_shown_at_us = esp_timer_get_time();
+    }
+}
+
+/* 创建明细页覆盖层（在 ui_create 中调用一次） */
+static void detail_page_create(lv_obj_t *parent)
+{
+    /* ---- 全屏覆盖容器 ---- */
+    s_detail_scr = lv_obj_create(parent);
+    lv_obj_set_size(s_detail_scr, LCD_H_RES, LCD_V_RES);
+    lv_obj_center(s_detail_scr);
+    lv_obj_clear_flag(s_detail_scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_detail_scr, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(s_detail_scr, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_detail_scr, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(s_detail_scr, 0, 0);
+    lv_obj_set_style_pad_all(s_detail_scr, 0, 0);
+    lv_obj_set_style_radius(s_detail_scr, 0, 0);
+    lv_obj_add_event_cb(s_detail_scr, detail_back_cb, LV_EVENT_CLICKED, NULL);
+
+    /* ---- 标题 ---- */
+    s_detail_title = lv_label_create(s_detail_scr);
+    lv_obj_set_style_text_font(s_detail_title, &lv_font_montserrat_20, 0);
+    lv_obj_align(s_detail_title, LV_ALIGN_TOP_MID, 0, DETAIL_TITLE_Y);
+
+    /* ---- 分隔线 ---- */
+    lv_obj_t *sep = lv_obj_create(s_detail_scr);
+    lv_obj_set_size(sep, 260, 2);
+    lv_obj_align(sep, LV_ALIGN_TOP_MID, 0, DETAIL_TITLE_Y + 28);
+    lv_obj_clear_flag(sep, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(sep, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(sep, lv_color_hex(0x333344), 0);
+    lv_obj_set_style_bg_opa(sep, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(sep, 0, 0);
+    lv_obj_set_style_radius(sep, 0, 0);
+    lv_obj_set_style_pad_all(sep, 0, 0);
+
+    /* ---- 数据行（左名称 + 右数值） ---- */
+    /* 名称：montserrat_14 小号灰色；数值：montserrat_24 大号纯白 */
+    for (int i = 0; i < DETAIL_MAX_ROWS; i++) {
+        s_detail_names[i] = lv_label_create(s_detail_scr);
+        lv_obj_set_style_text_font(s_detail_names[i], &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(s_detail_names[i], lv_color_hex(0x888899), 0);
+        lv_obj_align(s_detail_names[i], LV_ALIGN_TOP_LEFT, DETAIL_NAME_X,
+                      DETAIL_ROW_START_Y + i * DETAIL_ROW_H + 6);
+
+        s_detail_values[i] = lv_label_create(s_detail_scr);
+        lv_obj_set_style_text_font(s_detail_values[i], &lv_font_montserrat_24, 0);
+        lv_obj_set_style_text_color(s_detail_values[i], lv_color_white(), 0);
+        lv_obj_align(s_detail_values[i], LV_ALIGN_TOP_RIGHT, -DETAIL_VALUE_X,
+                      DETAIL_ROW_START_Y + i * DETAIL_ROW_H);
+    }
+
+    /* ---- 返回提示 ---- */
+    s_detail_back = lv_label_create(s_detail_scr);
+    lv_obj_set_style_text_font(s_detail_back, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_detail_back, lv_color_hex(0x555566), 0);
+    lv_label_set_text(s_detail_back, "< tap to back");
+    lv_obj_align(s_detail_back, LV_ALIGN_BOTTOM_MID, 0, -25);
+
+    /* ---- 校准 UI 控件 (默认隐藏) ---- */
+
+    /* 校准提示文本 */
+    s_calib_hint = lv_label_create(s_detail_scr);
+    lv_obj_set_style_text_font(s_calib_hint, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0x888899), 0);
+    lv_obj_align(s_calib_hint, LV_ALIGN_BOTTOM_MID, 0, -50);
+    lv_obj_add_flag(s_calib_hint, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_hint, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_calib_hint, calib_enter_cb, LV_EVENT_CLICKED, NULL);
+
+    /* 海拔显示 */
+    s_calib_lbl_alt = lv_label_create(s_detail_scr);
+    lv_obj_set_style_text_font(s_calib_lbl_alt, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s_calib_lbl_alt, lv_color_hex(0x00B4FF), 0);
+    lv_obj_align(s_calib_lbl_alt, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_add_flag(s_calib_lbl_alt, LV_OBJ_FLAG_HIDDEN);
+
+    /* P0 反推显示 */
+    s_calib_lbl_p0 = lv_label_create(s_detail_scr);
+    lv_obj_set_style_text_font(s_calib_lbl_p0, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(s_calib_lbl_p0, lv_color_hex(0xAAAAAA), 0);
+    lv_obj_align(s_calib_lbl_p0, LV_ALIGN_CENTER, 0, 10);
+    lv_obj_add_flag(s_calib_lbl_p0, LV_OBJ_FLAG_HIDDEN);
+
+    /* -10m 按钮 */
+    s_calib_btn_minus = lv_obj_create(s_detail_scr);
+    lv_obj_set_size(s_calib_btn_minus, 60, 40);
+    lv_obj_align(s_calib_btn_minus, LV_ALIGN_CENTER, -80, 60);
+    lv_obj_set_style_bg_color(s_calib_btn_minus, lv_color_hex(0x333344), 0);
+    lv_obj_set_style_bg_opa(s_calib_btn_minus, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_calib_btn_minus, 8, 0);
+    lv_obj_set_style_border_width(s_calib_btn_minus, 0, 0);
+    lv_obj_t *lbl_minus = lv_label_create(s_calib_btn_minus);
+    lv_label_set_text(lbl_minus, "-10m");
+    lv_obj_center(lbl_minus);
+    lv_obj_add_event_cb(s_calib_btn_minus, calib_minus_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(s_calib_btn_minus, LV_OBJ_FLAG_HIDDEN);
+
+    /* +10m 按钮 */
+    s_calib_btn_plus = lv_obj_create(s_detail_scr);
+    lv_obj_set_size(s_calib_btn_plus, 60, 40);
+    lv_obj_align(s_calib_btn_plus, LV_ALIGN_CENTER, 80, 60);
+    lv_obj_set_style_bg_color(s_calib_btn_plus, lv_color_hex(0x333344), 0);
+    lv_obj_set_style_bg_opa(s_calib_btn_plus, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_calib_btn_plus, 8, 0);
+    lv_obj_set_style_border_width(s_calib_btn_plus, 0, 0);
+    lv_obj_t *lbl_plus = lv_label_create(s_calib_btn_plus);
+    lv_label_set_text(lbl_plus, "+10m");
+    lv_obj_center(lbl_plus);
+    lv_obj_add_event_cb(s_calib_btn_plus, calib_plus_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(s_calib_btn_plus, LV_OBJ_FLAG_HIDDEN);
+
+    /* OK 按钮 */
+    s_calib_btn_ok = lv_obj_create(s_detail_scr);
+    lv_obj_set_size(s_calib_btn_ok, 70, 36);
+    lv_obj_align(s_calib_btn_ok, LV_ALIGN_CENTER, -40, 110);
+    lv_obj_set_style_bg_color(s_calib_btn_ok, lv_color_hex(0x00B4FF), 0);
+    lv_obj_set_style_bg_opa(s_calib_btn_ok, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_calib_btn_ok, 18, 0);
+    lv_obj_set_style_border_width(s_calib_btn_ok, 0, 0);
+    lv_obj_t *lbl_ok = lv_label_create(s_calib_btn_ok);
+    lv_label_set_text(lbl_ok, "OK");
+    lv_obj_set_style_text_color(lbl_ok, lv_color_black(), 0);
+    lv_obj_center(lbl_ok);
+    lv_obj_add_event_cb(s_calib_btn_ok, calib_ok_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(s_calib_btn_ok, LV_OBJ_FLAG_HIDDEN);
+
+    /* RESET 按钮 */
+    s_calib_btn_reset = lv_obj_create(s_detail_scr);
+    lv_obj_set_size(s_calib_btn_reset, 70, 36);
+    lv_obj_align(s_calib_btn_reset, LV_ALIGN_CENTER, 40, 110);
+    lv_obj_set_style_bg_color(s_calib_btn_reset, lv_color_hex(0x555566), 0);
+    lv_obj_set_style_bg_opa(s_calib_btn_reset, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_calib_btn_reset, 18, 0);
+    lv_obj_set_style_border_width(s_calib_btn_reset, 0, 0);
+    lv_obj_t *lbl_reset = lv_label_create(s_calib_btn_reset);
+    lv_label_set_text(lbl_reset, "RESET");
+    lv_obj_center(lbl_reset);
+    lv_obj_add_event_cb(s_calib_btn_reset, calib_reset_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(s_calib_btn_reset, LV_OBJ_FLAG_HIDDEN);
+
+    /* 默认隐藏 */
+    lv_obj_add_flag(s_detail_scr, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* 打开环境传感器明细页 */
+static void detail_show_env(void)
+{
+    s_detail_mode = DETAIL_ENV;
+    s_calib_mode = false;
+
+    lv_label_set_text(s_detail_title, "ENVIRONMENT");
+    lv_obj_set_style_text_color(s_detail_title, lv_color_hex(0x00B4FF), 0);
+
+    static const char *names[] = {"Temperature", "Humidity", "Pressure", "Altitude", "UV Index", "Sea Level P0"};
+    for (int i = 0; i < 6; i++) {
+        lv_label_set_text(s_detail_names[i], names[i]);
+        lv_obj_clear_flag(s_detail_names[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_detail_values[i], LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(s_detail_values[i], "--");
+    }
+    for (int i = 6; i < DETAIL_MAX_ROWS; i++) {
+        lv_obj_add_flag(s_detail_names[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_detail_values[i], LV_OBJ_FLAG_HIDDEN);
+    }
+
+    /* 隐藏校准控件，显示 CAL 提示 */
+    lv_obj_add_flag(s_calib_btn_minus, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_btn_plus, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_btn_ok, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_btn_reset, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s_calib_hint, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(s_calib_hint, "tap CAL to calibrate altitude");
+    lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0x555566), 0);
+
+    /* 隐藏校准相关标签 */
+    lv_obj_add_flag(s_calib_lbl_alt, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_lbl_p0, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_clear_flag(s_detail_scr, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* 打开运动传感器明细页 */
+static void detail_show_motion(void)
+{
+    s_detail_mode = DETAIL_MOTION;
+
+    lv_label_set_text(s_detail_title, "MOTION");
+    lv_obj_set_style_text_color(s_detail_title, lv_color_hex(0x00FF88), 0);
+
+    static const char *names[] = {"Pitch", "Roll", "Accel X", "Accel Y", "Accel Z",
+                                   "Gyro X", "Gyro Y", "Gyro Z"};
+    for (int i = 0; i < DETAIL_MAX_ROWS; i++) {
+        lv_label_set_text(s_detail_names[i], names[i]);
+        lv_obj_clear_flag(s_detail_names[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_detail_values[i], LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(s_detail_values[i], "--");
+    }
+
+    lv_obj_clear_flag(s_detail_scr, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* 明细页数据实时更新 (@5Hz) */
+static void detail_update(void)
+{
+    if (s_detail_mode == DETAIL_NONE) return;
+
+    int64_t now = esp_timer_get_time();
+    if (now - s_last_detail_update_us < 200000) return;  /* 5Hz 限速 */
+    s_last_detail_update_us = now;
+
+    char buf[32];
+
+    if (s_detail_mode == DETAIL_ENV) {
+        env_snapshot_t env;
+        if (sensor_manager_get_env(&env) == ESP_OK) {
+            int hpa = (int)(env.bmp280.pressure / 100.0f);
+
+            snprintf(buf, sizeof(buf), "%.1f °C", env.aht20.temperature);
+            lv_label_set_text(s_detail_values[0], buf);
+
+            snprintf(buf, sizeof(buf), "%.0f %%", env.aht20.humidity);
+            lv_label_set_text(s_detail_values[1], buf);
+
+            snprintf(buf, sizeof(buf), "%d hPa", hpa);
+            lv_label_set_text(s_detail_values[2], buf);
+
+            snprintf(buf, sizeof(buf), "%.0f m", env.bmp280.altitude);
+            lv_label_set_text(s_detail_values[3], buf);
+
+            snprintf(buf, sizeof(buf), "%.1f", env.uv.uv_index);
+            lv_label_set_text(s_detail_values[4], buf);
+
+            /* Sea Level P0 */
+            bmp280_calib_config_t calib = sensor_manager_get_calib();
+            snprintf(buf, sizeof(buf), "%.1f hPa", calib.sea_level_pa / 100.0f);
+            lv_label_set_text(s_detail_values[5], buf);
+        }
+    } else if (s_detail_mode == DETAIL_MOTION) {
+        float pitch = 0, roll = 0;
+        motion_engine_get_angles(&pitch, &roll);
+
+        snprintf(buf, sizeof(buf), "%+.1f °", pitch);
+        lv_label_set_text(s_detail_values[0], buf);
+
+        snprintf(buf, sizeof(buf), "%+.1f °", roll);
+        lv_label_set_text(s_detail_values[1], buf);
+
+        imu_snapshot_t imu;
+        if (sensor_manager_get_imu(&imu) == ESP_OK) {
+            snprintf(buf, sizeof(buf), "%+.3f g", imu.imu.accel[0]);
+            lv_label_set_text(s_detail_values[2], buf);
+
+            snprintf(buf, sizeof(buf), "%+.3f g", imu.imu.accel[1]);
+            lv_label_set_text(s_detail_values[3], buf);
+
+            snprintf(buf, sizeof(buf), "%+.3f g", imu.imu.accel[2]);
+            lv_label_set_text(s_detail_values[4], buf);
+
+            snprintf(buf, sizeof(buf), "%+.1f °/s", imu.imu.gyro[0]);
+            lv_label_set_text(s_detail_values[5], buf);
+
+            snprintf(buf, sizeof(buf), "%+.1f °/s", imu.imu.gyro[1]);
+            lv_label_set_text(s_detail_values[6], buf);
+
+            snprintf(buf, sizeof(buf), "%+.1f °/s", imu.imu.gyro[2]);
+            lv_label_set_text(s_detail_values[7], buf);
+        }
+    }
+}
+
+/* ===================== 气压计校准 UI ===================== */
+
+/* 更新校准显示 */
+static void calib_update_display(void)
+{
+    char buf[48];
+    snprintf(buf, sizeof(buf), "%.0f m", s_calib_altitude);
+    lv_label_set_text(s_calib_lbl_alt, buf);
+
+    /* 实时反推 P0 */
+    env_snapshot_t env;
+    if (sensor_manager_get_env(&env) == ESP_OK && env.bmp280.pressure > 0) {
+        float p0 = drv_bmp280_calc_sea_level(s_calib_altitude, env.bmp280.pressure);
+        if (p0 > 0) {
+            snprintf(buf, sizeof(buf), "P0 = %.1f hPa", p0 / 100.0f);
+            lv_label_set_text(s_calib_lbl_p0, buf);
+        }
+    }
+}
+
+/* -10m 按钮回调 */
+static void calib_minus_cb(lv_event_t *e)
+{
+    (void)e;
+    s_calib_altitude -= 10.0f;
+    if (s_calib_altitude < -500) s_calib_altitude = -500;
+    calib_update_display();
+}
+
+/* +10m 按钮回调 */
+static void calib_plus_cb(lv_event_t *e)
+{
+    (void)e;
+    s_calib_altitude += 10.0f;
+    if (s_calib_altitude > 9000) s_calib_altitude = 9000;
+    calib_update_display();
+}
+
+/* 确认校准回调 */
+static void calib_ok_cb(lv_event_t *e)
+{
+    (void)e;
+    esp_err_t ret = sensor_manager_calib_altitude(s_calib_altitude);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "海拔校准成功: %.0f m", s_calib_altitude);
+        lv_label_set_text(s_calib_hint, "Calibrated!");
+        lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0x00FF88), 0);
+    } else {
+        lv_label_set_text(s_calib_hint, "Failed!");
+        lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0xFF5050), 0);
+    }
+    /* 退出校准模式 */
+    s_calib_mode = false;
+    lv_obj_add_flag(s_calib_btn_minus, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_btn_plus, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_btn_ok, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_btn_reset, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(s_calib_hint, "tap CAL to recalibrate");
+}
+
+/* 重置校准回调 */
+static void calib_reset_cb(lv_event_t *e)
+{
+    (void)e;
+    sensor_manager_calib_reset();
+    lv_label_set_text(s_calib_hint, "Reset to default");
+    lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0xFFB400), 0);
+    s_calib_mode = false;
+    lv_obj_add_flag(s_calib_btn_minus, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_btn_plus, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_btn_ok, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_calib_btn_reset, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* CAL 按钮回调：进入校准模式 */
+static void calib_enter_cb(lv_event_t *e)
+{
+    (void)e;
+    s_calib_mode = true;
+
+    /* 初始化已知海拔为当前计算值 */
+    env_snapshot_t env;
+    if (sensor_manager_get_env(&env) == ESP_OK) {
+        s_calib_altitude = env.bmp280.altitude;
+    } else {
+        s_calib_altitude = 0;
+    }
+
+    /* 显示校准控件 */
+    lv_obj_clear_flag(s_calib_btn_minus, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s_calib_btn_plus, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s_calib_btn_ok, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s_calib_btn_reset, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s_calib_lbl_alt, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s_calib_lbl_p0, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(s_calib_hint, "Adjust to known altitude");
+    lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0x00B4FF), 0);
+    calib_update_display();
+}
+
 /* ===================== 叠加层更新 ===================== */
 static int64_t s_last_env_update_us  = 0;
 static int64_t s_last_tilt_update_us = 0;
@@ -506,14 +931,17 @@ static void overlay_update(void)
         }
     }
 
-    /* 状态机：SHOWN 状态 3 秒后自动淡出 */
-    if (s_overlay_state == OVERLAY_SHOWN) {
+    /* 状态机：SHOWN 状态 3 秒后自动淡出 (明细页打开时暂停计时) */
+    if (s_overlay_state == OVERLAY_SHOWN && s_detail_mode == DETAIL_NONE) {
         if (now - s_overlay_shown_at_us >= (int64_t)CAPSULE_DISPLAY_MS * 1000) {
             s_overlay_state = OVERLAY_HIDDEN;
             capsule_fade_out(s_capsule_env);
             capsule_fade_out(s_capsule_motion);
         }
     }
+
+    /* 明细页数据实时更新 */
+    detail_update();
 }
 
 /* ===================== 表情引擎 tick (独立调用) ===================== */
@@ -529,10 +957,30 @@ static void emote_engine_tick_locked(void)
 /* ===================== 点击回调 ===================== */
 static void click_cb(lv_event_t *e)
 {
-    (void)e;
-    /* 1. 切换表情（保留原有行为） */
+    lv_point_t pt;
+    lv_indev_get_point(lv_indev_get_act(), &pt);
+
+    /* 胶囊可见时，检测点击是否落在胶囊区域 → 进入明细页 */
+    if (s_overlay_state != OVERLAY_HIDDEN) {
+        lv_area_t a;
+
+        /* 顶部胶囊 → 环境明细 */
+        lv_obj_get_coords(s_capsule_env, &a);
+        if (pt.x >= a.x1 && pt.x <= a.x2 && pt.y >= a.y1 && pt.y <= a.y2) {
+            detail_show_env();
+            return;
+        }
+
+        /* 底部胶囊 → 运动明细 */
+        lv_obj_get_coords(s_capsule_motion, &a);
+        if (pt.x >= a.x1 && pt.x <= a.x2 && pt.y >= a.y1 && pt.y <= a.y2) {
+            detail_show_motion();
+            return;
+        }
+    }
+
+    /* 默认行为：切换表情 + 唤出胶囊 */
     emote_engine_manual_next();
-    /* 2. 唤出数据胶囊（如果当前不是异常高亮状态） */
     overlay_show_temporary();
 }
 
@@ -577,6 +1025,9 @@ static void ui_create(lv_disp_t *disp)
                                        CAPSULE_MOTION_Y, &s_lbl_motion);
     capsule_set_normal_style(s_capsule_motion, s_lbl_motion, false);
     lv_label_set_text(s_lbl_motion, "UV -- · --m · P-- R--");
+
+    /* ---- 明细页覆盖层（最后创建 → 位于最顶层）---- */
+    detail_page_create(scr);
 }
 
 /* ===================== LVGL 主任务 ===================== */
@@ -595,6 +1046,70 @@ static void lvgl_task(void *arg)
         if (delay > LVGL_TASK_MAX_DELAY) delay = LVGL_TASK_MAX_DELAY;
         else if (delay < LVGL_TASK_MIN_DELAY) delay = LVGL_TASK_MIN_DELAY;
         vTaskDelay(pdMS_TO_TICKS(delay));
+    }
+}
+
+/* ===================== BLE 数据推送任务 ===================== */
+static void ble_notify_task(void *arg)
+{
+    ESP_LOGI(TAG, "BLE notify 任务启动");
+    vTaskDelay(pdMS_TO_TICKS(3000));  /* 等待传感器稳定 */
+
+    char last_emote_name[32] = {0};
+    int  emote_check_counter = 0;
+
+    while (1) {
+        /* ── 环境数据 @1Hz ── */
+        env_snapshot_t env;
+        if (sensor_manager_get_env(&env) == ESP_OK) {
+            ble_gatt_notify_env(
+                (int16_t)(env.aht20.temperature * 100),
+                (uint16_t)(env.aht20.humidity * 100),
+                (uint32_t)env.bmp280.pressure,
+                (int16_t)(env.bmp280.altitude * 10),
+                (uint16_t)(env.uv.uv_index * 100)
+            );
+        }
+
+        /* ── 运动数据 @10Hz (每 100ms) ── */
+        for (int i = 0; i < 10; i++) {
+            float pitch = 0, roll = 0;
+            motion_engine_get_angles(&pitch, &roll);
+            motion_event_t evt = motion_engine_get_event();
+
+            /* 从 IMU 原始数据计算合加速度偏差 */
+            imu_snapshot_t imu;
+            float accel_mag = 0.0f;
+            if (sensor_manager_get_imu(&imu) == ESP_OK) {
+                float ax = imu.imu.accel[0];
+                float ay = imu.imu.accel[1];
+                float az = imu.imu.accel[2];
+                float mag = sqrtf(ax * ax + ay * ay + az * az);
+                accel_mag = fabsf(mag - 1.0f);  /* 偏离 1g 的量 */
+            }
+
+            ble_gatt_notify_motion(
+                (int16_t)(pitch * 100),
+                (int16_t)(roll * 100),
+                (uint16_t)(accel_mag * 1000),
+                (uint8_t)evt,
+                95  /* confidence placeholder */
+            );
+
+            /* ── 表情状态 @2Hz (每 500ms 检查一次) ── */
+            if (++emote_check_counter >= 5) {
+                emote_check_counter = 0;
+                const char *name = emote_engine_get_current_name();
+                if (name && strcmp(name, last_emote_name) != 0) {
+                    strncpy(last_emote_name, name, sizeof(last_emote_name) - 1);
+                    /* 计算 trigger code: 简单映射 */
+                    uint8_t trigger = 9;  /* normal */
+                    ble_gatt_notify_emote(0, name, trigger);
+                }
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
     }
 }
 
@@ -720,6 +1235,13 @@ void app_main(void)
 
     /* ---- 启动 LVGL 主任务 ---- */
     xTaskCreate(lvgl_task, "LVGL", LVGL_TASK_STACK, NULL, LVGL_TASK_PRIORITY, NULL);
+
+    /* ---- BLE GATT Server ---- */
+    ESP_LOGI(TAG, "初始化 BLE GATT Server");
+    ble_gatt_server_init();
+
+    /* ---- BLE 数据推送任务 ---- */
+    xTaskCreate(ble_notify_task, "BLE_NOTIFY", 6 * 1024, NULL, 2, NULL);
 
     ESP_LOGI(TAG, "PathFinder EMOTE 初始化完成!");
 }
