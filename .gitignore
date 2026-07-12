@@ -21,3 +21,6 @@ PathFinder_Dashboard/android/local.properties
 
 # OS files
 .DS_Store
+
+# Reference materials (external)
+资料/
