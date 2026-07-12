@@ -35,6 +35,9 @@ static const ble_uuid16_t c3_motion_uuid = BLE_UUID16_INIT(0xFE03);
 /* C4 Emote: 0xFE04 */
 static const ble_uuid16_t c4_emote_uuid = BLE_UUID16_INIT(0xFE04);
 
+/* C5 WiFi: 0xFE05 (Write + Notify) */
+static const ble_uuid16_t c5_wifi_uuid = BLE_UUID16_INIT(0xFE05);
+
 /* ── 连接状态 ── */
 static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static bool s_initialized = false;
@@ -43,11 +46,19 @@ static bool s_initialized = false;
 static uint16_t s_c2_handle = 0;
 static uint16_t s_c3_handle = 0;
 static uint16_t s_c4_handle = 0;
+static uint16_t s_c5_handle = 0;
 
 /* ── CCCD 订阅状态 ── */
 static bool s_c2_subscribed = false;
 static bool s_c3_subscribed = false;
 static bool s_c4_subscribed = false;
+static bool s_c5_subscribed = false;
+
+/* ── C5 WiFi Write 回调 + JSON 分包缓冲 ── */
+static ble_wifi_write_cb_t s_wifi_write_cb = NULL;
+#define WIFI_JSON_BUF_SIZE 512
+static char s_json_buf[WIFI_JSON_BUF_SIZE];
+static int  s_json_buf_pos = 0;
 
 /* ════════════════════════════════════════════════════════════
  *  GATT 特征值访问回调
@@ -62,6 +73,48 @@ static int gatt_chr_access(uint16_t conn_handle, uint16_t attr_handle,
         os_mbuf_append(ctxt->om, dummy, sizeof(dummy));
         return 0;
     }
+
+    /* C5 Write — 接收配网 JSON */
+    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        if (attr_handle == s_c5_handle) {
+            uint8_t data[200];
+            uint16_t data_len = OS_MBUF_PKTLEN(ctxt->om);
+            if (data_len > sizeof(data) - 1) data_len = sizeof(data) - 1;
+            ble_hs_mbuf_to_flat(ctxt->om, data, data_len, &data_len);
+            data[data_len] = '\0';
+
+            /* 分包处理: 首字节 0x00=完整帧开始, 0x01=分片后续 */
+            if (data[0] == 0x00) {
+                /* 新帧开始 */
+                s_json_buf_pos = 0;
+                size_t copy_len = data_len - 1;
+                if (copy_len >= WIFI_JSON_BUF_SIZE) copy_len = WIFI_JSON_BUF_SIZE - 1;
+                memcpy(s_json_buf, &data[1], copy_len);
+                s_json_buf_pos = copy_len;
+            } else if (data[0] == 0x01) {
+                /* 分片后续 */
+                size_t copy_len = data_len - 1;
+                if (s_json_buf_pos + copy_len >= WIFI_JSON_BUF_SIZE) {
+                    copy_len = WIFI_JSON_BUF_SIZE - 1 - s_json_buf_pos;
+                }
+                memcpy(&s_json_buf[s_json_buf_pos], &data[1], copy_len);
+                s_json_buf_pos += copy_len;
+            }
+
+            s_json_buf[s_json_buf_pos] = '\0';
+
+            /* 检查 JSON 是否完整 (闭合 }) */
+            if (strchr(s_json_buf, '}') != NULL) {
+                ESP_LOGI(TAG, "收到完整 JSON: %s", s_json_buf);
+                if (s_wifi_write_cb) {
+                    s_wifi_write_cb(s_json_buf);
+                }
+                s_json_buf_pos = 0;
+            }
+            return 0;
+        }
+    }
+
     return BLE_ATT_ERR_UNLIKELY;
 }
 
@@ -91,6 +144,12 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
                 .access_cb = gatt_chr_access,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
                 .val_handle = &s_c4_handle,
+            },
+            {
+                .uuid = &c5_wifi_uuid.u,
+                .access_cb = gatt_chr_access,
+                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
+                .val_handle = &s_c5_handle,
             },
             {
                 0, /* No more characteristics */
@@ -130,6 +189,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         s_c2_subscribed = false;
         s_c3_subscribed = false;
         s_c4_subscribed = false;
+        s_c5_subscribed = false;
+        s_json_buf_pos = 0;
         /* 重新广播 */
         ble_gatt_server_start_adv();
         break;
@@ -147,6 +208,9 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             } else if (event->subscribe.attr_handle == s_c4_handle) {
                 s_c4_subscribed = true;
                 ESP_LOGI(TAG, "C4(Emote) subscribed");
+            } else if (event->subscribe.attr_handle == s_c5_handle) {
+                s_c5_subscribed = true;
+                ESP_LOGI(TAG, "C5(WiFi) subscribed");
             }
         } else if (event->subscribe.cur_notify == 0) {
             /* 客户端取消了 notify */
@@ -159,6 +223,9 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             } else if (event->subscribe.attr_handle == s_c4_handle) {
                 s_c4_subscribed = false;
                 ESP_LOGI(TAG, "C4(Emote) unsubscribed");
+            } else if (event->subscribe.attr_handle == s_c5_handle) {
+                s_c5_subscribed = false;
+                ESP_LOGI(TAG, "C5(WiFi) unsubscribed");
             }
         }
         break;
@@ -391,4 +458,29 @@ void ble_gatt_notify_emote(uint8_t emote_id, const char *name,
 bool ble_gatt_is_connected(void)
 {
     return s_initialized && s_conn_handle != BLE_HS_CONN_HANDLE_NONE;
+}
+
+/* ════════════════════════════════════════════════════════════
+ *  C5 WiFi 配网 — Notify + 回调注册
+ * ════════════════════════════════════════════════════════════ */
+
+void ble_gatt_notify_wifi_status(const char *json_str)
+{
+    if (!s_initialized || s_conn_handle == BLE_HS_CONN_HANDLE_NONE)
+        return;
+    if (!s_c5_subscribed)
+        return;
+
+    size_t len = strlen(json_str);
+    if (len > 180) len = 180;
+
+    struct os_mbuf *om = ble_hs_mbuf_from_flat((const uint8_t *)json_str, len);
+    if (om) {
+        ble_gattc_notify_custom(s_conn_handle, s_c5_handle, om);
+    }
+}
+
+void ble_gatt_register_wifi_write_cb(ble_wifi_write_cb_t cb)
+{
+    s_wifi_write_cb = cb;
 }

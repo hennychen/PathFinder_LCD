@@ -63,4 +63,19 @@ void ble_gatt_notify_emote(uint8_t emote_id, const char *name,
  */
 bool ble_gatt_is_connected(void);
 
+/* ── C5 WiFi 配网特征值 (Write + Notify) ── */
+
+/**
+ * @brief 向连接的客户端发送配网状态 JSON (通过 C5 Notify)
+ * @param json_str JSON 字符串 (UTF-8)
+ */
+void ble_gatt_notify_wifi_status(const char *json_str);
+
+/**
+ * @brief 注册 C5 Write 回调 (收到 App 发来的 JSON 命令时调用)
+ * @param cb 回调函数, 参数为收到的 JSON 字符串
+ */
+typedef void (*ble_wifi_write_cb_t)(const char *json_str);
+void ble_gatt_register_wifi_write_cb(ble_wifi_write_cb_t cb);
+
 #endif /* BLE_GATT_SERVER_H */
