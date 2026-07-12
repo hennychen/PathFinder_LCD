@@ -32,6 +32,10 @@
 #include "motion_engine.h"
 #include "emote_engine.h"
 #include "ble_gatt_server.h"
+#include "wifi_config_manager.h"
+#include "web_portal.h"
+#include "provision_screen.h"
+#include "cJSON.h"
 
 static const char *TAG = "emote";
 
@@ -984,6 +988,102 @@ static void click_cb(lv_event_t *e)
     overlay_show_temporary();
 }
 
+/* ===================== Wi-Fi 配网状态同步 ===================== */
+static void on_wifi_prov_state(wifi_prov_state_t state, const char *ssid, const char *detail)
+{
+    if (!lvgl_lock(100)) return;
+
+    switch (state) {
+    case WIFI_PROV_STATE_PROVISIONING:
+        if (!provision_screen_is_visible()) {
+            provision_screen_create(lv_disp_get_scr_act(lv_disp_get_default()));
+        }
+        provision_screen_set_state(PROV_SCREEN_WAITING, NULL, NULL);
+        break;
+
+    case WIFI_PROV_STATE_CONNECTING:
+        provision_screen_set_state(PROV_SCREEN_CONNECTING, ssid, detail);
+        break;
+
+    case WIFI_PROV_STATE_CONNECTED:
+        provision_screen_set_state(PROV_SCREEN_CONNECTED, ssid, detail);
+        /* 2 秒后销毁配网 UI */
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        if (lvgl_lock(100)) {
+            provision_screen_destroy();
+            lvgl_unlock();
+        }
+        break;
+
+    case WIFI_PROV_STATE_FAILED:
+        provision_screen_set_state(PROV_SCREEN_FAILED, ssid, detail);
+        break;
+
+    default:
+        break;
+    }
+
+    lvgl_unlock();
+
+    /* 通过 BLE C5 Notify 通知 App */
+    cJSON *json = cJSON_CreateObject();
+    const char *state_str = "idle";
+    switch (state) {
+        case WIFI_PROV_STATE_PROVISIONING: state_str = "provisioning"; break;
+        case WIFI_PROV_STATE_CONNECTING:   state_str = "connecting"; break;
+        case WIFI_PROV_STATE_CONNECTED:    state_str = "connected"; break;
+        case WIFI_PROV_STATE_FAILED:       state_str = "failed"; break;
+        default: break;
+    }
+    cJSON_AddStringToObject(json, "status", state_str);
+    if (ssid && strlen(ssid) > 0) cJSON_AddStringToObject(json, "ssid", ssid);
+    if (detail && strlen(detail) > 0) {
+        if (state == WIFI_PROV_STATE_CONNECTED) {
+            cJSON_AddStringToObject(json, "ip", detail);
+        } else {
+            cJSON_AddStringToObject(json, "error", detail);
+        }
+    }
+    char *json_str = cJSON_PrintUnformatted(json);
+    if (json_str) {
+        ble_gatt_notify_wifi_status(json_str);
+        cJSON_free(json_str);
+    }
+    cJSON_Delete(json);
+}
+
+/* ===================== BLE C5 Write 回调 ===================== */
+static void on_ble_wifi_write(const char *json_str)
+{
+    cJSON *root = cJSON_Parse(json_str);
+    if (!root) return;
+
+    cJSON *cmd = cJSON_GetObjectItem(root, "cmd");
+    if (!cmd || !cJSON_IsString(cmd)) {
+        cJSON_Delete(root);
+        return;
+    }
+
+    if (strcmp(cmd->valuestring, "set_wifi") == 0) {
+        cJSON *ssid_item = cJSON_GetObjectItem(root, "ssid");
+        cJSON *pass_item = cJSON_GetObjectItem(root, "pass");
+        if (ssid_item && cJSON_IsString(ssid_item)) {
+            const char *ssid = ssid_item->valuestring;
+            const char *pass = (pass_item && cJSON_IsString(pass_item)) ? pass_item->valuestring : "";
+            wifi_config_manager_set_credentials(ssid, pass);
+        }
+    } else if (strcmp(cmd->valuestring, "get_status") == 0) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "{\"status\":\"%s\"}",
+                 wifi_config_manager_is_connected() ? "connected" : "provisioning");
+        ble_gatt_notify_wifi_status(buf);
+    } else if (strcmp(cmd->valuestring, "reset_wifi") == 0) {
+        wifi_config_manager_reset();
+    }
+
+    cJSON_Delete(root);
+}
+
 /* ===================== UI 创建 ===================== */
 static void ui_create(lv_disp_t *disp)
 {
@@ -1239,6 +1339,12 @@ void app_main(void)
     /* ---- BLE GATT Server ---- */
     ESP_LOGI(TAG, "初始化 BLE GATT Server");
     ble_gatt_server_init();
+
+    /* ---- Wi-Fi 配置管理器 ---- */
+    ESP_LOGI(TAG, "初始化 Wi-Fi 配置管理器");
+    wifi_config_manager_register_cb(on_wifi_prov_state);
+    ble_gatt_register_wifi_write_cb(on_ble_wifi_write);
+    wifi_config_manager_init();
 
     /* ---- BLE 数据推送任务 ---- */
     xTaskCreate(ble_notify_task, "BLE_NOTIFY", 6 * 1024, NULL, 2, NULL);
