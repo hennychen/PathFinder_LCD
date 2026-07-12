@@ -1,0 +1,71 @@
+/**
+ * @file wifi_config_manager.h
+ * @brief Wi-Fi 配置管理器 — NVS 存取, STA/AP 切换, 重连逻辑
+ */
+#ifndef WIFI_CONFIG_MANAGER_H
+#define WIFI_CONFIG_MANAGER_H
+
+#include "esp_err.h"
+#include <stdbool.h>
+
+/* ── 配网状态 ── */
+typedef enum {
+    WIFI_PROV_STATE_IDLE = 0,       /* 空闲 */
+    WIFI_PROV_STATE_PROVISIONING,   /* 配网模式 (AP+BLE 就绪) */
+    WIFI_PROV_STATE_CONNECTING,     /* 正在连接 STA */
+    WIFI_PROV_STATE_CONNECTED,      /* STA 已连接 */
+    WIFI_PROV_STATE_FAILED,         /* 连接失败 */
+} wifi_prov_state_t;
+
+/* ── 状态回调 ── */
+typedef void (*wifi_prov_state_cb_t)(wifi_prov_state_t state, const char *ssid, const char *detail);
+
+/* ── 初始化 ── */
+/**
+ * @brief 初始化 Wi-Fi 配置管理器
+ *        读取 NVS，有凭据则启动 STA，无凭据则启动配网模式
+ *        必须在 NVS init 之后、BLE init 之前调用
+ */
+esp_err_t wifi_config_manager_init(void);
+
+/* ── 配网操作 (BLE / Web Portal 调用) ── */
+
+/**
+ * @brief 设置 Wi-Fi 凭据并尝试连接
+ *        保存到 NVS，切换 STA 模式尝试连接
+ * @param ssid Wi-Fi SSID (最长 32 字节)
+ * @param password Wi-Fi 密码 (最长 64 字节)
+ */
+esp_err_t wifi_config_manager_set_credentials(const char *ssid, const char *password);
+
+/**
+ * @brief 清除 NVS 中的 Wi-Fi 凭据，重启进入配网模式
+ */
+esp_err_t wifi_config_manager_reset(void);
+
+/**
+ * @brief 获取当前配网状态
+ */
+wifi_prov_state_t wifi_config_manager_get_state(void);
+
+/**
+ * @brief 检查是否已连接 Wi-Fi
+ */
+bool wifi_config_manager_is_connected(void);
+
+/**
+ * @brief 获取已连接的 SSID
+ */
+const char *wifi_config_manager_get_ssid(void);
+
+/**
+ * @brief 获取已分配的 IP 地址 (STA 模式)
+ */
+const char *wifi_config_manager_get_ip(void);
+
+/**
+ * @brief 注册状态变化回调 (供 LVGL / BLE Notify 调用)
+ */
+void wifi_config_manager_register_cb(wifi_prov_state_cb_t cb);
+
+#endif /* WIFI_CONFIG_MANAGER_H */
