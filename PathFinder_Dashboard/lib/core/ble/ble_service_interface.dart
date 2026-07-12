@@ -12,6 +12,7 @@ enum BleConnectionState {
 }
 
 abstract class BleServiceInterface {
+  BleConnectionState get currentState;
   Stream<BleConnectionState> get connectionState;
   Stream<EnvSnapshot> subscribeEnv();
   Stream<ImuSnapshot> subscribeMotion();

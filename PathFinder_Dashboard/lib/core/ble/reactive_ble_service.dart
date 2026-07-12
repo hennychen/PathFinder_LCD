@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'ble_service_interface.dart';
 import 'ble_uuids.dart';
+import 'ble_wifi_writer.dart';
 import '../../shared/models/env_snapshot.dart';
 import '../../shared/models/imu_snapshot.dart';
 import '../../shared/models/emote_info.dart';
@@ -52,6 +53,9 @@ class ReactiveBleService implements BleServiceInterface {
     serviceId: pfServiceUuid,
     deviceId: id,
   );
+
+  @override
+  BleConnectionState get currentState => _currentState;
 
   @override
   Stream<BleConnectionState> get connectionState async* {
@@ -223,6 +227,32 @@ class ReactiveBleService implements BleServiceInterface {
       case DeviceConnectionState.disconnecting:
         return BleConnectionState.disconnected;
     }
+  }
+
+  // ── Wi-Fi 配网 ──
+
+  /// 写入 Wi-Fi 配置到 ESP32 (通过 C5 特征值)
+  Future<void> writeWifiConfig(String ssid, String password) async {
+    if (_connectedDeviceId == null) {
+      debugPrint('[BLE] Cannot write WiFi config: not connected');
+      return;
+    }
+    final writer = BleWifiWriter(_ble);
+    await writer.sendWifiConfig(_connectedDeviceId!, ssid, password);
+  }
+
+  /// 查询 ESP32 Wi-Fi 状态
+  Future<void> queryWifiStatus() async {
+    if (_connectedDeviceId == null) return;
+    final writer = BleWifiWriter(_ble);
+    await writer.queryStatus(_connectedDeviceId!);
+  }
+
+  /// 重置 ESP32 Wi-Fi 配置
+  Future<void> resetWifiConfig() async {
+    if (_connectedDeviceId == null) return;
+    final writer = BleWifiWriter(_ble);
+    await writer.resetWifi(_connectedDeviceId!);
   }
 
   void dispose() {
