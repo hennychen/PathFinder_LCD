@@ -261,12 +261,13 @@ static esp_err_t handler_status(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── Captive Portal 重定向处理 ── */
-static esp_err_t handler_redirect(httpd_req_t *req)
+/* ── Captive Portal 探测处理: 直接返回配网页面 ── */
+/* 很多手机的 Captive Portal mini-browser 不跟随 302 重定向, */
+/* 必须直接返回 HTML 内容才能弹出配网页面 */
+static esp_err_t handler_captive(httpd_req_t *req)
 {
-    httpd_resp_set_status(req, "302 Found");
-    httpd_resp_set_hdr(req, "Location", "/");
-    httpd_resp_send(req, "", 0);
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, PORTAL_HTML, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -299,10 +300,10 @@ esp_err_t web_portal_start(void)
     httpd_uri_t uri_connect = { .uri = "/api/connect", .method = HTTP_POST, .handler = handler_connect };
     httpd_uri_t uri_status = { .uri = "/api/status", .method = HTTP_GET, .handler = handler_status };
 
-    /* Captive Portal 探测路径 */
-    httpd_uri_t uri_gen204 = { .uri = "/generate_204", .method = HTTP_GET, .handler = handler_redirect };
-    httpd_uri_t uri_hotspot = { .uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = handler_redirect };
-    httpd_uri_t uri_ncsi = { .uri = "/ncsi.txt", .method = HTTP_GET, .handler = handler_redirect };
+    /* Captive Portal 探测路径 (直接返回配网页面, 不重定向) */
+    httpd_uri_t uri_gen204 = { .uri = "/generate_204", .method = HTTP_GET, .handler = handler_captive };
+    httpd_uri_t uri_hotspot = { .uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = handler_captive };
+    httpd_uri_t uri_ncsi = { .uri = "/ncsi.txt", .method = HTTP_GET, .handler = handler_captive };
 
     httpd_register_uri_handler(s_server, &uri_root);
     httpd_register_uri_handler(s_server, &uri_scan);
