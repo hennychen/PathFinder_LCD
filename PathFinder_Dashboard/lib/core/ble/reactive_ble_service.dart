@@ -232,6 +232,7 @@ class ReactiveBleService implements BleServiceInterface {
   // ── Wi-Fi 配网 ──
 
   /// 写入 Wi-Fi 配置到 ESP32 (通过 C5 特征值)
+  @override
   Future<void> writeWifiConfig(String ssid, String password) async {
     if (_connectedDeviceId == null) {
       debugPrint('[BLE] Cannot write WiFi config: not connected');
@@ -242,6 +243,7 @@ class ReactiveBleService implements BleServiceInterface {
   }
 
   /// 查询 ESP32 Wi-Fi 状态
+  @override
   Future<void> queryWifiStatus() async {
     if (_connectedDeviceId == null) return;
     final writer = BleWifiWriter(_ble);
@@ -249,6 +251,7 @@ class ReactiveBleService implements BleServiceInterface {
   }
 
   /// 重置 ESP32 Wi-Fi 配置
+  @override
   Future<void> resetWifiConfig() async {
     if (_connectedDeviceId == null) return;
     final writer = BleWifiWriter(_ble);

@@ -27,6 +27,9 @@ class MockBleService implements BleServiceInterface {
   }
 
   @override
+  BleConnectionState get currentState => _currentState;
+
+  @override
   Stream<EnvSnapshot> subscribeEnv() => _envController.stream;
   @override
   Stream<ImuSnapshot> subscribeMotion() => _motionController.stream;
@@ -61,6 +64,15 @@ class MockBleService implements BleServiceInterface {
     _currentState = BleConnectionState.disconnected;
     _connectionController.add(_currentState);
   }
+
+  @override
+  Future<void> writeWifiConfig(String ssid, String password) async {}
+
+  @override
+  Future<void> queryWifiStatus() async {}
+
+  @override
+  Future<void> resetWifiConfig() async {}
 
   void _startMockData() {
     // Environment data @1Hz
