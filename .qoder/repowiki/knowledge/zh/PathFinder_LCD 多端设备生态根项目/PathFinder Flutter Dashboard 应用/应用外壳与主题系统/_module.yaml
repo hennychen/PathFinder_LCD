@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: pathfinder_dashboard/app_shell_and_theme
+title: 应用外壳与主题系统
+scope:
+    - PathFinder_Dashboard/lib/app/
+    - PathFinder_Dashboard/lib/main.dart
+source_files: []
+depends_on: []
+related_to:
+    - path: pathfinder_dashboard/features

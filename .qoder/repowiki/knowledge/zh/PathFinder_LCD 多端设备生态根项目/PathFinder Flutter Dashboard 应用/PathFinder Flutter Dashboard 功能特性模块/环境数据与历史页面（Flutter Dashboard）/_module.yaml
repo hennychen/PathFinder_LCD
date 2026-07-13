@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: pathfinder_dashboard/features/environment_and_history
+title: 环境数据与历史页面（Flutter Dashboard）
+scope:
+    - PathFinder_Dashboard/lib/features/environment/
+    - PathFinder_Dashboard/lib/features/history/
+source_files: []
+depends_on: []
+related_to:
+    - path: pathfinder_dashboard/features/motion
+    - path: pathfinder_dashboard/shared_layer

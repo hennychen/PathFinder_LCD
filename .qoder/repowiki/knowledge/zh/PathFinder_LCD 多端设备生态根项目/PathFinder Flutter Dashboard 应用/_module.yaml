@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: pathfinder_dashboard
+title: PathFinder Flutter Dashboard 应用
+scope:
+    - PathFinder_Dashboard/
+source_files: []
+depends_on: []
+related_to: []

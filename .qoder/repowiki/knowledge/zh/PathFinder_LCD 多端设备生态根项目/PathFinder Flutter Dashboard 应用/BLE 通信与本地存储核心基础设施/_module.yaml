@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: pathfinder_dashboard/core_infrastructure
+title: BLE 通信与本地存储核心基础设施
+scope:
+    - PathFinder_Dashboard/lib/core/ble/
+    - PathFinder_Dashboard/lib/core/storage/
+source_files: []
+depends_on: []
+related_to:
+    - path: pathfinder_dashboard/shared_layer
+    - path: pathfinder_emote/main_app/connectivity

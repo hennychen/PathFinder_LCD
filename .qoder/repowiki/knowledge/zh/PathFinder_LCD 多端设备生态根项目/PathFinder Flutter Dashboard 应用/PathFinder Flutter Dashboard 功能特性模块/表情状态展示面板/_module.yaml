@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: pathfinder_dashboard/features/emote
+title: 表情状态展示面板
+scope:
+    - PathFinder_Dashboard/lib/features/emote/
+source_files: []
+depends_on: []
+related_to:
+    - path: pathfinder_dashboard/shared_layer

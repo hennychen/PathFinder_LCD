@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: ""
-title: PathFinder_LCD 根仓库
+title: PathFinder_LCD 多端设备生态根项目
 scope:
     - README.md
     - LICENSE

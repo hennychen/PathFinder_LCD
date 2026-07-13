@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: pathfinder_emote
+title: PathFinder_EMOTE 表情设备（ESP32-S3 + Flutter）
+scope:
+    - PathFinder_EMOTE/
+source_files: []
+depends_on: []
+related_to:
+    - path: esp32_lvgl_demo_app

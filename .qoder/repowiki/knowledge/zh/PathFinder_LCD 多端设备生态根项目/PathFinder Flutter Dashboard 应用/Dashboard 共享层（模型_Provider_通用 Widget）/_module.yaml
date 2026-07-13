@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: pathfinder_dashboard/shared_layer
+title: Dashboard 共享层（模型/Provider/通用 Widget）
+scope:
+    - PathFinder_Dashboard/lib/shared/
+source_files: []
+depends_on: []
+related_to:
+    - path: pathfinder_dashboard/core_infrastructure
+    - path: pathfinder_dashboard/features/connection
+    - path: pathfinder_dashboard/features/emote
+    - path: pathfinder_dashboard/features/environment_and_history
+    - path: pathfinder_dashboard/features/motion

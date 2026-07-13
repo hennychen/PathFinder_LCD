@@ -5,4 +5,5 @@ scope:
     - ESP32开发板/TK021F2699_ESP32_LVGL_GIF_LED/
 source_files: []
 depends_on: []
-related_to: []
+related_to:
+    - path: pathfinder_emote

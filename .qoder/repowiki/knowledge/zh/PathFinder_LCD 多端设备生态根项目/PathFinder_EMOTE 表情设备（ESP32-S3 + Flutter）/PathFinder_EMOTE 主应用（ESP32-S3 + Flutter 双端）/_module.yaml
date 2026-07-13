@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: pathfinder_emote/main_app
+title: PathFinder_EMOTE 主应用（ESP32-S3 + Flutter 双端）
+scope:
+    - PathFinder_EMOTE/main/
+source_files: []
+depends_on: []
+related_to: []

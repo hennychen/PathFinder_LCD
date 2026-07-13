@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: pathfinder_emote/main_app/sensor_drivers
+title: 传感器硬件驱动层（I2C/ADC）
+scope:
+    - PathFinder_EMOTE/main/drivers/
+source_files: []
+depends_on: []
+related_to: []

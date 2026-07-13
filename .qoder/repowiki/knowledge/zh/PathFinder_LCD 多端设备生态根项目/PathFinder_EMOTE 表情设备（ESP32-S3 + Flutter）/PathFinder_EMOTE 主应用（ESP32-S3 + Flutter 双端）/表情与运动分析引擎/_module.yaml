@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: pathfinder_emote/main_app/emote_motion
+title: 表情与运动分析引擎
+scope:
+    - PathFinder_EMOTE/main/emote_engine.c
+    - PathFinder_EMOTE/main/motion_engine.c
+    - PathFinder_EMOTE/main/app_emote_assets.c
+source_files: []
+depends_on: []
+related_to:
+    - path: pathfinder_emote/main_app/connectivity

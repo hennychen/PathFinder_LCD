@@ -7,4 +7,3 @@ source_files: []
 depends_on: []
 related_to:
     - path: esp32_lvgl_demo_app/main_app
-    - path: esp32_lvgl_demo_app/project_build_config

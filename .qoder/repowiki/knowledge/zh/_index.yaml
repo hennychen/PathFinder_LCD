@@ -3,17 +3,19 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-07-09T12:30:07Z"
+exported_at: "2026-07-12T13:01:40Z"
 modules:
     "":
-        dir_name: PathFinder_LCD 根仓库
-        title: PathFinder_LCD 根仓库
+        dir_name: PathFinder_LCD 多端设备生态根项目
+        title: PathFinder_LCD 多端设备生态根项目
         scope:
             - README.md
             - LICENSE
         source_files: []
         children:
             - esp32_lvgl_demo_app
+            - pathfinder_dashboard
+            - pathfinder_emote
         depends_on: []
         related_to: []
     esp32_lvgl_demo_app:
@@ -27,7 +29,8 @@ modules:
             - esp32_lvgl_demo_app/main_app
             - esp32_lvgl_demo_app/project_build_config
         depends_on: []
-        related_to: []
+        related_to:
+            - path: pathfinder_emote
     esp32_lvgl_demo_app/lvgl_component:
         dir_name: LVGL 8.3.11 图形库源码（ESP-IDF managed component）
         title: LVGL 8.3.11 图形库源码（ESP-IDF managed component）
@@ -38,7 +41,6 @@ modules:
         depends_on: []
         related_to:
             - path: esp32_lvgl_demo_app/main_app
-            - path: esp32_lvgl_demo_app/project_build_config
     esp32_lvgl_demo_app/main_app:
         dir_name: ESP32 LVGL 环形菜单与 GIF 动图演示应用
         title: ESP32 LVGL 环形菜单与 GIF 动图演示应用
@@ -61,5 +63,168 @@ modules:
         children: []
         depends_on: []
         related_to:
-            - path: esp32_lvgl_demo_app/lvgl_component
             - path: esp32_lvgl_demo_app/main_app
+    pathfinder_dashboard:
+        dir_name: PathFinder Flutter Dashboard 应用
+        title: PathFinder Flutter Dashboard 应用
+        scope:
+            - PathFinder_Dashboard/
+        source_files: []
+        children:
+            - pathfinder_dashboard/app_shell_and_theme
+            - pathfinder_dashboard/core_infrastructure
+            - pathfinder_dashboard/features
+            - pathfinder_dashboard/shared_layer
+        depends_on: []
+        related_to: []
+    pathfinder_dashboard/app_shell_and_theme:
+        dir_name: 应用外壳与主题系统
+        title: 应用外壳与主题系统
+        scope:
+            - PathFinder_Dashboard/lib/app/
+            - PathFinder_Dashboard/lib/main.dart
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: pathfinder_dashboard/features
+    pathfinder_dashboard/core_infrastructure:
+        dir_name: BLE 通信与本地存储核心基础设施
+        title: BLE 通信与本地存储核心基础设施
+        scope:
+            - PathFinder_Dashboard/lib/core/ble/
+            - PathFinder_Dashboard/lib/core/storage/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: pathfinder_dashboard/shared_layer
+            - path: pathfinder_emote/main_app/connectivity
+    pathfinder_dashboard/features:
+        dir_name: PathFinder Flutter Dashboard 功能特性模块
+        title: PathFinder Flutter Dashboard 功能特性模块
+        scope:
+            - PathFinder_Dashboard/lib/features/
+        source_files: []
+        children:
+            - pathfinder_dashboard/features/connection
+            - pathfinder_dashboard/features/emote
+            - pathfinder_dashboard/features/environment_and_history
+            - pathfinder_dashboard/features/motion
+        depends_on: []
+        related_to:
+            - path: pathfinder_dashboard/app_shell_and_theme
+    pathfinder_dashboard/features/connection:
+        dir_name: BLE 设备连接与配对界面
+        title: BLE 设备连接与配对界面
+        scope:
+            - PathFinder_Dashboard/lib/features/connection/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: pathfinder_dashboard/shared_layer
+    pathfinder_dashboard/features/emote:
+        dir_name: 表情状态展示面板
+        title: 表情状态展示面板
+        scope:
+            - PathFinder_Dashboard/lib/features/emote/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: pathfinder_dashboard/shared_layer
+    pathfinder_dashboard/features/environment_and_history:
+        dir_name: 环境数据与历史页面（Flutter Dashboard）
+        title: 环境数据与历史页面（Flutter Dashboard）
+        scope:
+            - PathFinder_Dashboard/lib/features/environment/
+            - PathFinder_Dashboard/lib/features/history/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: pathfinder_dashboard/features/motion
+            - path: pathfinder_dashboard/shared_layer
+    pathfinder_dashboard/features/motion:
+        dir_name: 运动数据仪表盘（姿态_IMU波形_事件时间线）
+        title: 运动数据仪表盘（姿态/IMU波形/事件时间线）
+        scope:
+            - PathFinder_Dashboard/lib/features/motion/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: pathfinder_dashboard/features/environment_and_history
+            - path: pathfinder_dashboard/shared_layer
+    pathfinder_dashboard/shared_layer:
+        dir_name: Dashboard 共享层（模型_Provider_通用 Widget）
+        title: Dashboard 共享层（模型/Provider/通用 Widget）
+        scope:
+            - PathFinder_Dashboard/lib/shared/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: pathfinder_dashboard/core_infrastructure
+            - path: pathfinder_dashboard/features/connection
+            - path: pathfinder_dashboard/features/emote
+            - path: pathfinder_dashboard/features/environment_and_history
+            - path: pathfinder_dashboard/features/motion
+    pathfinder_emote:
+        dir_name: PathFinder_EMOTE 表情设备（ESP32-S3 + Flutter）
+        title: PathFinder_EMOTE 表情设备（ESP32-S3 + Flutter）
+        scope:
+            - PathFinder_EMOTE/
+        source_files: []
+        children:
+            - pathfinder_emote/main_app
+        depends_on: []
+        related_to:
+            - path: esp32_lvgl_demo_app
+    pathfinder_emote/main_app:
+        dir_name: PathFinder_EMOTE 主应用（ESP32-S3 + Flutter 双端）
+        title: PathFinder_EMOTE 主应用（ESP32-S3 + Flutter 双端）
+        scope:
+            - PathFinder_EMOTE/main/
+        source_files: []
+        children:
+            - pathfinder_emote/main_app/connectivity
+            - pathfinder_emote/main_app/emote_motion
+            - pathfinder_emote/main_app/sensor_drivers
+        depends_on: []
+        related_to: []
+    pathfinder_emote/main_app/connectivity:
+        dir_name: BLE GATT 服务器与 Wi-Fi 配网子系统
+        title: BLE GATT 服务器与 Wi-Fi 配网子系统
+        scope:
+            - PathFinder_EMOTE/main/ble_gatt_server.c
+            - PathFinder_EMOTE/main/wifi_config_manager.c
+            - PathFinder_EMOTE/main/web_portal.c
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: pathfinder_dashboard/core_infrastructure
+            - path: pathfinder_emote/main_app/emote_motion
+    pathfinder_emote/main_app/emote_motion:
+        dir_name: 表情与运动分析引擎
+        title: 表情与运动分析引擎
+        scope:
+            - PathFinder_EMOTE/main/emote_engine.c
+            - PathFinder_EMOTE/main/motion_engine.c
+            - PathFinder_EMOTE/main/app_emote_assets.c
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: pathfinder_emote/main_app/connectivity
+    pathfinder_emote/main_app/sensor_drivers:
+        dir_name: 传感器硬件驱动层（I2C_ADC）
+        title: 传感器硬件驱动层（I2C/ADC）
+        scope:
+            - PathFinder_EMOTE/main/drivers/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: pathfinder_emote/main_app/connectivity
+title: BLE GATT 服务器与 Wi-Fi 配网子系统
+scope:
+    - PathFinder_EMOTE/main/ble_gatt_server.c
+    - PathFinder_EMOTE/main/wifi_config_manager.c
+    - PathFinder_EMOTE/main/web_portal.c
+source_files: []
+depends_on: []
+related_to:
+    - path: pathfinder_dashboard/core_infrastructure
+    - path: pathfinder_emote/main_app/emote_motion

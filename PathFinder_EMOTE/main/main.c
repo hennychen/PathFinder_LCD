@@ -93,12 +93,12 @@ static const char *TAG = "emote";
 /* ===================== 胶囊布局参数 ===================== */
 #define CAPSULE_FADE_MS          200    /* 淡入/淡出动画时长 */
 #define CAPSULE_DISPLAY_MS       3000   /* 点击唤出后显示时长 */
-#define CAPSULE_ENV_W            200    /* 顶部胶囊宽度 */
-#define CAPSULE_ENV_H            38     /* 顶部胶囊高度 */
-#define CAPSULE_ENV_Y            68     /* 顶部胶囊 Y 坐标 */
-#define CAPSULE_MOTION_W         250    /* 底部胶囊宽度 */
-#define CAPSULE_MOTION_H         38     /* 底部胶囊高度 */
-#define CAPSULE_MOTION_Y         378    /* 底部胶囊 Y 坐标 */
+#define CAPSULE_ENV_W            240    /* 顶部胶囊宽度 (圆形屏安全区内) */
+#define CAPSULE_ENV_H            46     /* 顶部胶囊高度 (适配 montserrat_18) */
+#define CAPSULE_ENV_Y            58     /* 顶部胶囊 Y 坐标 */
+#define CAPSULE_MOTION_W         290    /* 底部胶囊宽度 (圆形屏安全区内) */
+#define CAPSULE_MOTION_H         46     /* 底部胶囊高度 */
+#define CAPSULE_MOTION_Y         376    /* 底部胶囊 Y 坐标 */
 #define EAF_SIZE                 330    /* EAF 表情区域大小 */
 #define NAME_LABEL_Y_OFFSET      -130   /* 名称标签距底部偏移 */
 
@@ -173,6 +173,7 @@ static lv_obj_t        *s_calib_btn_plus  = NULL;
 static lv_obj_t        *s_calib_btn_ok    = NULL;
 static lv_obj_t        *s_calib_btn_reset = NULL;
 static lv_obj_t        *s_calib_hint      = NULL;
+static lv_obj_t        *s_calib_hint_lbl   = NULL; /* CAL 胶囊按钮内部标签 */
 
 /* 校准回调前向声明 */
 static void calib_minus_cb(lv_event_t *e);
@@ -296,22 +297,27 @@ static void capsule_set_normal_style(lv_obj_t *capsule, lv_obj_t *label, bool is
     if (is_env) {
         /* 顶部胶囊 — 青色系 (环境数据) */
         lv_obj_set_style_bg_color(capsule, lv_color_hex(0x00B4FF), 0);
-        lv_obj_set_style_bg_opa(capsule, 38, 0);  /* ~15% */
-        lv_obj_set_style_border_color(capsule, lv_color_hex(0x00B4FF), 0);
-        lv_obj_set_style_border_opa(capsule, LV_OPA_40, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0x00C8FF), 0);
-        lv_obj_set_style_text_opa(label, 217, 0);  /* ~85% */
+        lv_obj_set_style_bg_opa(capsule, 51, 0);   /* ~20%，提升胶囊辨识度 */
+        /* 无边框：去除矩形框，仅靠背景色+阴影呈现胶囊形态 */
+        lv_obj_set_style_border_width(capsule, 0, 0);
+        /* 纯白粗体感文字：100%不透明最大化对比度 */
+        lv_obj_set_style_text_color(label, lv_color_white(), 0);
+        lv_obj_set_style_text_opa(label, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_color(capsule, lv_color_hex(0x0088CC), 0);
     } else {
         /* 底部胶囊 — 绿色系 (运动数据) */
         lv_obj_set_style_bg_color(capsule, lv_color_hex(0x00FF88), 0);
-        lv_obj_set_style_bg_opa(capsule, 31, 0);  /* ~12% */
-        lv_obj_set_style_border_color(capsule, lv_color_hex(0x00FF88), 0);
-        lv_obj_set_style_border_opa(capsule, LV_OPA_40, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0x00FF88), 0);
-        lv_obj_set_style_text_opa(label, 204, 0);  /* ~80% */
+        lv_obj_set_style_bg_opa(capsule, 41, 0);   /* ~16% */
+        lv_obj_set_style_border_width(capsule, 0, 0);
+        lv_obj_set_style_text_color(label, lv_color_white(), 0);
+        lv_obj_set_style_text_opa(label, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_color(capsule, lv_color_hex(0x00CC66), 0);
     }
-    lv_obj_set_style_border_width(capsule, 1, 0);
-    lv_obj_set_style_radius(capsule, CAPSULE_ENV_H / 2, 0);  /* 全圆角 */
+    lv_obj_set_style_shadow_width(capsule, 12, 0);
+    lv_obj_set_style_shadow_ofs_y(capsule, 2, 0);
+    lv_obj_set_style_shadow_spread(capsule, 0, 0);
+    lv_obj_set_style_shadow_opa(capsule, LV_OPA_30, 0);
+    lv_obj_set_style_radius(capsule, LV_RADIUS_CIRCLE, 0);  /* 全圆角 */
 }
 
 /* 设置胶囊异常高亮样式 (红色/黄色) */
@@ -320,24 +326,30 @@ static void capsule_set_alert_style(lv_obj_t *capsule, lv_obj_t *label, alert_le
     if (level == ALERT_URGENT) {
         /* 红色紧急 */
         lv_obj_set_style_bg_color(capsule, lv_color_hex(0xFF5050), 0);
-        lv_obj_set_style_bg_opa(capsule, LV_OPA_20, 0);
+        lv_obj_set_style_bg_opa(capsule, LV_OPA_30, 0);
         lv_obj_set_style_border_color(capsule, lv_color_hex(0xFF5050), 0);
         lv_obj_set_style_border_opa(capsule, LV_OPA_70, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFF7878), 0);
-        lv_obj_set_style_text_opa(label, 242, 0);  /* ~95% */
+        lv_obj_set_style_text_color(label, lv_color_hex(0xFF8888), 0);
+        lv_obj_set_style_text_opa(label, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_color(capsule, lv_color_hex(0xCC2020), 0);
     } else {
         /* 黄色警告 */
         lv_obj_set_style_bg_color(capsule, lv_color_hex(0xFFB400), 0);
-        lv_obj_set_style_bg_opa(capsule, LV_OPA_20, 0);
+        lv_obj_set_style_bg_opa(capsule, LV_OPA_30, 0);
         lv_obj_set_style_border_color(capsule, lv_color_hex(0xFFB400), 0);
         lv_obj_set_style_border_opa(capsule, LV_OPA_70, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFFC850), 0);
-        lv_obj_set_style_text_opa(label, 242, 0);  /* ~95% */
+        lv_obj_set_style_text_color(label, lv_color_hex(0xFFCC66), 0);
+        lv_obj_set_style_text_opa(label, LV_OPA_COVER, 0);
+        lv_obj_set_style_shadow_color(capsule, lv_color_hex(0xCC8800), 0);
     }
     lv_obj_set_style_border_width(capsule, 2, 0);
+    lv_obj_set_style_shadow_width(capsule, 14, 0);
+    lv_obj_set_style_shadow_ofs_y(capsule, 2, 0);
+    lv_obj_set_style_shadow_spread(capsule, 0, 0);
+    lv_obj_set_style_shadow_opa(capsule, LV_OPA_40, 0);
 }
 
-/* 创建一个胶囊 (矩形 + 全圆角 + 居中标签) */
+/* 创建一个胶囊 (矩形 + 全圆角 + 内边距 + 阴影 + 居中标签) */
 static lv_obj_t *create_capsule(lv_obj_t *parent, lv_coord_t w, lv_coord_t h,
                                  lv_coord_t y_pos, lv_obj_t **out_label)
 {
@@ -347,16 +359,28 @@ static lv_obj_t *create_capsule(lv_obj_t *parent, lv_coord_t w, lv_coord_t h,
     lv_obj_clear_flag(cap, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(cap, LV_OBJ_FLAG_CLICKABLE);
 
-    lv_obj_set_style_pad_all(cap, 0, 0);
-    lv_obj_set_style_border_width(cap, 1, 0);
-    lv_obj_set_style_radius(cap, h / 2, 0);  /* 全圆角 = 高度/2 */
+    /* 水平内边距：让文字不贴圆角边缘，避免裁切色彩断层 */
+    lv_obj_set_style_pad_left(cap, 14, 0);
+    lv_obj_set_style_pad_right(cap, 14, 0);
+    lv_obj_set_style_pad_top(cap, 0, 0);
+    lv_obj_set_style_pad_bottom(cap, 0, 0);
+    lv_obj_set_style_border_width(cap, 0, 0);  /* 无边框 */
+    lv_obj_set_style_outline_width(cap, 0, 0); /* 无外描边 */
+    lv_obj_set_style_radius(cap, LV_RADIUS_CIRCLE, 0);  /* 全圆角 */
+
+    /* 边缘阴影：与圆形黑底自然融合，消除生硬切割感 */
+    lv_obj_set_style_shadow_width(cap, 12, 0);
+    lv_obj_set_style_shadow_ofs_y(cap, 2, 0);
+    lv_obj_set_style_shadow_spread(cap, 0, 0);
+    lv_obj_set_style_shadow_color(cap, lv_color_black(), 0);
+    lv_obj_set_style_shadow_opa(cap, LV_OPA_30, 0);
 
     /* 默认隐藏 */
     lv_obj_set_style_opa(cap, LV_OPA_0, 0);
 
-    /* 居中标签 */
+    /* 居中标签 — montserrat_18 适配 480×480 圆形屏 PPI */
     lv_obj_t *lbl = lv_label_create(cap);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18, 0);
     lv_obj_center(lbl);
     *out_label = lbl;
 
@@ -543,14 +567,31 @@ static void detail_page_create(lv_obj_t *parent)
 
     /* ---- 校准 UI 控件 (默认隐藏) ---- */
 
-    /* 校准提示文本 */
-    s_calib_hint = lv_label_create(s_detail_scr);
-    lv_obj_set_style_text_font(s_calib_hint, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0x888899), 0);
-    lv_obj_align(s_calib_hint, LV_ALIGN_BOTTOM_MID, 0, -50);
-    lv_obj_add_flag(s_calib_hint, LV_OBJ_FLAG_HIDDEN);
+    /* 校准 CAL 胶囊按钮 (EMA 蓝色胶囊风格) */
+    s_calib_hint = lv_obj_create(s_detail_scr);
+    lv_obj_set_size(s_calib_hint, 90, 34);
+    lv_obj_align(s_calib_hint, LV_ALIGN_BOTTOM_MID, 0, -60);
+    lv_obj_clear_flag(s_calib_hint, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_calib_hint, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(s_calib_hint, LV_OBJ_FLAG_HIDDEN);
+    /* EMA 胶囊样式：蓝色背景 + 全圆角 + 无边框 + 阴影 */
+    lv_obj_set_style_bg_color(s_calib_hint, lv_color_hex(0x00B4FF), 0);
+    lv_obj_set_style_bg_opa(s_calib_hint, 51, 0);
+    lv_obj_set_style_border_width(s_calib_hint, 0, 0);
+    lv_obj_set_style_radius(s_calib_hint, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_pad_all(s_calib_hint, 0, 0);
+    lv_obj_set_style_shadow_color(s_calib_hint, lv_color_hex(0x0088CC), 0);
+    lv_obj_set_style_shadow_width(s_calib_hint, 10, 0);
+    lv_obj_set_style_shadow_ofs_y(s_calib_hint, 2, 0);
+    lv_obj_set_style_shadow_opa(s_calib_hint, LV_OPA_30, 0);
     lv_obj_add_event_cb(s_calib_hint, calib_enter_cb, LV_EVENT_CLICKED, NULL);
+    /* 胶囊内部标签 */
+    s_calib_hint_lbl = lv_label_create(s_calib_hint);
+    lv_obj_set_style_text_font(s_calib_hint_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_opa(s_calib_hint_lbl, LV_OPA_COVER, 0);
+    lv_label_set_text(s_calib_hint_lbl, "CAL");
+    lv_obj_center(s_calib_hint_lbl);
 
     /* 海拔显示 */
     s_calib_lbl_alt = lv_label_create(s_detail_scr);
@@ -654,8 +695,8 @@ static void detail_show_env(void)
     lv_obj_add_flag(s_calib_btn_ok, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_calib_btn_reset, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_calib_hint, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(s_calib_hint, "tap CAL to calibrate altitude");
-    lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0x555566), 0);
+    lv_label_set_text(s_calib_hint_lbl, "CAL");
+    lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_white(), 0);
 
     /* 隐藏校准相关标签 */
     lv_obj_add_flag(s_calib_lbl_alt, LV_OBJ_FLAG_HIDDEN);
@@ -798,11 +839,11 @@ static void calib_ok_cb(lv_event_t *e)
     esp_err_t ret = sensor_manager_calib_altitude(s_calib_altitude);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "海拔校准成功: %.0f m", s_calib_altitude);
-        lv_label_set_text(s_calib_hint, "Calibrated!");
-        lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0x00FF88), 0);
+        lv_label_set_text(s_calib_hint_lbl, "Done!");
+        lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_hex(0x00FF88), 0);
     } else {
-        lv_label_set_text(s_calib_hint, "Failed!");
-        lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0xFF5050), 0);
+        lv_label_set_text(s_calib_hint_lbl, "Err!");
+        lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_hex(0xFF5050), 0);
     }
     /* 退出校准模式 */
     s_calib_mode = false;
@@ -810,7 +851,7 @@ static void calib_ok_cb(lv_event_t *e)
     lv_obj_add_flag(s_calib_btn_plus, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_calib_btn_ok, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_calib_btn_reset, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(s_calib_hint, "tap CAL to recalibrate");
+    lv_label_set_text(s_calib_hint_lbl, "CAL");
 }
 
 /* 重置校准回调 */
@@ -818,8 +859,8 @@ static void calib_reset_cb(lv_event_t *e)
 {
     (void)e;
     sensor_manager_calib_reset();
-    lv_label_set_text(s_calib_hint, "Reset to default");
-    lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0xFFB400), 0);
+    lv_label_set_text(s_calib_hint_lbl, "CAL");
+    lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_hex(0xFFB400), 0);
     s_calib_mode = false;
     lv_obj_add_flag(s_calib_btn_minus, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_calib_btn_plus, LV_OBJ_FLAG_HIDDEN);
@@ -848,8 +889,8 @@ static void calib_enter_cb(lv_event_t *e)
     lv_obj_clear_flag(s_calib_btn_reset, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_calib_lbl_alt, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_calib_lbl_p0, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(s_calib_hint, "Adjust to known altitude");
-    lv_obj_set_style_text_color(s_calib_hint, lv_color_hex(0x00B4FF), 0);
+    lv_label_set_text(s_calib_hint_lbl, "Adjust");
+    lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_hex(0x00B4FF), 0);
     calib_update_display();
 }
 
