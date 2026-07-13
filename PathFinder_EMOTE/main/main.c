@@ -35,6 +35,7 @@
 #include "wifi_config_manager.h"
 #include "web_portal.h"
 #include "provision_screen.h"
+#include "flight_instruments.h"
 #include "cJSON.h"
 
 static const char *TAG = "emote";
@@ -976,8 +977,9 @@ static void overlay_update(void)
         }
     }
 
-    /* 状态机：SHOWN 状态 3 秒后自动淡出 (明细页打开时暂停计时) */
-    if (s_overlay_state == OVERLAY_SHOWN && s_detail_mode == DETAIL_NONE) {
+    /* 状态机：SHOWN 状态 3 秒后自动淡出 (明细页/仪表页打开时暂停计时) */
+    if (s_overlay_state == OVERLAY_SHOWN && s_detail_mode == DETAIL_NONE &&
+        !flight_instruments_is_visible()) {
         if (now - s_overlay_shown_at_us >= (int64_t)CAPSULE_DISPLAY_MS * 1000) {
             s_overlay_state = OVERLAY_HIDDEN;
             capsule_fade_out(s_capsule_env);
@@ -997,6 +999,15 @@ static void emote_engine_tick_locked(void)
         s_last_emote_tick_us = now;
         emote_engine_tick();
     }
+}
+
+/* ===================== 长按回调 ===================== */
+static void long_press_cb(lv_event_t *e)
+{
+    (void)e;
+    /* 长按：手动切换表情 + 唤出胶囊 */
+    emote_engine_manual_next();
+    overlay_show_temporary();
 }
 
 /* ===================== 点击回调 ===================== */
@@ -1024,9 +1035,8 @@ static void click_cb(lv_event_t *e)
         }
     }
 
-    /* 默认行为：切换表情 + 唤出胶囊 */
-    emote_engine_manual_next();
-    overlay_show_temporary();
+    /* 默认行为：进入飞行仪表页 */
+    flight_instruments_show();
 }
 
 /* ===================== Wi-Fi 配网状态同步 ===================== */
@@ -1149,6 +1159,7 @@ static void ui_create(lv_disp_t *disp)
     lv_obj_clear_flag(s_eaf_obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_eaf_obj, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_eaf_obj, click_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_eaf_obj, long_press_cb, LV_EVENT_LONG_PRESSED, NULL);
 
     /* ---- 名称标签：底部居中 ---- */
     s_name_label = lv_label_create(scr);
@@ -1167,6 +1178,9 @@ static void ui_create(lv_disp_t *disp)
     capsule_set_normal_style(s_capsule_motion, s_lbl_motion, false);
     lv_label_set_text(s_lbl_motion, "UV -- · --m · P-- R--");
 
+    /* ---- 飞行仪表盘覆盖层 ---- */
+    flight_instruments_create(scr);
+
     /* ---- 明细页覆盖层（最后创建 → 位于最顶层）---- */
     detail_page_create(scr);
 }
@@ -1181,6 +1195,7 @@ static void lvgl_task(void *arg)
             delay = lv_timer_handler();
             overlay_update();
             emote_engine_tick_locked();
+            flight_instruments_update();
             lvgl_unlock();
         }
 
@@ -1273,6 +1288,7 @@ void app_main(void)
         .data_width = 16,
         .num_fbs = 2,
         .bounce_buffer_size_px = LCD_H_RES * 40,
+        .dma_burst_size = 64,
         .clk_src = LCD_CLK_SRC_PLL240M,
         .disp_gpio_num = -1,
         .pclk_gpio_num = PIN_PCLK,

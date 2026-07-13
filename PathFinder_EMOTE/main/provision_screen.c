@@ -22,11 +22,37 @@ static lv_obj_t *s_hint_label = NULL;
 static lv_obj_t *s_status_capsule = NULL;
 static lv_obj_t *s_status_capsule_lbl = NULL;
 static lv_obj_t *s_progress_bar = NULL;
+static lv_obj_t *s_skip_btn = NULL;
 static lv_obj_t *s_pulse_dots[3] = {NULL};
 
 /* 脉冲动画 */
 static lv_anim_t s_pulse_anim;
 static bool s_pulse_active = false;
+
+/* 前向声明 */
+static void pulse_stop(void);
+
+/* 跳过按钮回调 */
+static void skip_btn_cb(lv_event_t *e)
+{
+    (void)e;
+    pulse_stop();
+    if (s_overlay) {
+        lv_obj_del(s_overlay);
+        s_overlay = NULL;
+        s_title_label = NULL;
+        s_ssid_label = NULL;
+        s_detail_label = NULL;
+        s_hint_label = NULL;
+        s_status_capsule = NULL;
+        s_status_capsule_lbl = NULL;
+        s_progress_bar = NULL;
+        s_skip_btn = NULL;
+        for (int i = 0; i < 3; i++) {
+            s_pulse_dots[i] = NULL;
+        }
+    }
+}
 
 static void pulse_cb(void *obj, int32_t v)
 {
@@ -163,6 +189,27 @@ void provision_screen_create(lv_obj_t *parent)
         lv_obj_set_style_bg_color(s_pulse_dots[i], lv_color_hex(COLOR_YELLOW), 0);
     }
 
+    /* 跳过按钮 (右下角) */
+    s_skip_btn = lv_obj_create(s_overlay);
+    lv_obj_set_size(s_skip_btn, 80, 32);
+    lv_obj_align(s_skip_btn, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
+    lv_obj_clear_flag(s_skip_btn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_skip_btn, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(s_skip_btn, 38, 0);
+    lv_obj_set_style_bg_color(s_skip_btn, lv_color_hex(COLOR_GREY), 0);
+    lv_obj_set_style_radius(s_skip_btn, 16, 0);
+    lv_obj_set_style_border_width(s_skip_btn, 1, 0);
+    lv_obj_set_style_border_color(s_skip_btn, lv_color_hex(COLOR_GREY), 0);
+    lv_obj_set_style_pad_all(s_skip_btn, 0, 0);
+
+    lv_obj_t *skip_lbl = lv_label_create(s_skip_btn);
+    lv_obj_set_style_text_font(skip_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(skip_lbl, lv_color_hex(COLOR_GREY), 0);
+    lv_label_set_text(skip_lbl, "Skip");
+    lv_obj_center(skip_lbl);
+
+    lv_obj_add_event_cb(s_skip_btn, skip_btn_cb, LV_EVENT_CLICKED, NULL);
+
     /* 默认状态: WAITING */
     provision_screen_set_state(PROV_SCREEN_WAITING, NULL, NULL);
 }
@@ -284,6 +331,7 @@ void provision_screen_destroy(void)
         s_status_capsule = NULL;
         s_status_capsule_lbl = NULL;
         s_progress_bar = NULL;
+        s_skip_btn = NULL;
         for (int i = 0; i < 3; i++) {
             s_pulse_dots[i] = NULL;
         }

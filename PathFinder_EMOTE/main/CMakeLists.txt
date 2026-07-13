@@ -14,6 +14,7 @@ idf_component_register(
         "wifi_config_manager.c"
         "web_portal.c"
         "provision_screen.c"
+        "flight_instruments.c"
     INCLUDE_DIRS
         "."
         "drivers"

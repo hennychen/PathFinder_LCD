@@ -2239,10 +2239,8 @@ CONFIG_ESP_INTR_IN_IRAM=y
 #
 # ESP-Driver:LCD Controller Configurations
 #
-# default:
-# CONFIG_LCD_RGB_ISR_IRAM_SAFE is not set
-# default:
-# CONFIG_LCD_RGB_RESTART_IN_VSYNC is not set
+CONFIG_LCD_RGB_ISR_IRAM_SAFE=y
+CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
 # default:
 # CONFIG_LCD_ENABLE_DEBUG_LOG is not set
 # end of ESP-Driver:LCD Controller Configurations
@@ -2463,10 +2461,15 @@ CONFIG_ESP_ROM_PRINT_IN_IRAM=y
 #
 # ESP-STDIO
 #
+# default:
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+# default:
 # CONFIG_ESP_CONSOLE_USB_CDC is not set
+# default:
 # CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG is not set
+# default:
 # CONFIG_ESP_CONSOLE_UART_CUSTOM is not set
+# default:
 # CONFIG_ESP_CONSOLE_NONE is not set
 # default:
 # CONFIG_ESP_CONSOLE_SECONDARY_NONE is not set
