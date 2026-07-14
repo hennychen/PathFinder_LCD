@@ -6,15 +6,14 @@ CONFIG_SPIRAM_SPEED_80M=y
 # CONFIG_SPIRAM_FETCH_INSTRUCTIONS is not set
 # CONFIG_SPIRAM_RODATA is not set
 
-# RGB LCD — Bounce Buffer 模式（GDMA 从内部 SRAM 读取，彻底消除 FIFO under-run）
-# CONFIG_EXAMPLE_DOUBLE_FB is not set
+# RGB LCD — Bounce Buffer 模式（GDMA 从内部 SRAM 读取）
 CONFIG_EXAMPLE_USE_BOUNCE_BUFFER=y
 
-# RGB LCD 稳定性增强：ISR IRAM 安全 + VSync 期间重启 DMA
-# IRAM_SAFE: 确保 Bounce Buffer DMA ISR 在 IRAM 中执行，避免 Flash cache miss 延迟导致 FIFO under-run
-# RESTART_IN_VSYNC: 发生 under-run 时在 VSync 消隐期重启 DMA，优雅恢复而非花屏
-CONFIG_LCD_RGB_ISR_IRAM_SAFE=y
-CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
+# RGB LCD 稳定性增强
+# 注意：ISR_IRAM_SAFE 会导致 spi_flash_read 期间 cache error 崩溃（ISR 访问 PSRAM 需 cache）
+# 注意：RESTART_IN_VSYNC 会在 DMA under-run 时重启 DMA，导致画面整体跳动/闪屏
+# CONFIG_LCD_RGB_ISR_IRAM_SAFE is not set
+# CONFIG_LCD_RGB_RESTART_IN_VSYNC is not set
 
 # Flash 16MB
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y

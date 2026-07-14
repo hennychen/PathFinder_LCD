@@ -24,6 +24,7 @@
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
 #include "lvgl.h"
 #include "LCD.h"
 #include "app_emote_assets.h"
@@ -1277,6 +1278,18 @@ void app_main(void)
     ESP_LOGI(TAG, "  TK021F2699 + ESP32-S3");
     ESP_LOGI(TAG, "========================================");
 
+    /* ---- NVS 初始化 (必须在 LCD DMA 启动前完成) ---- */
+    esp_err_t nvs_ret = nvs_flash_init();
+    if (nvs_ret == ESP_ERR_NVS_NO_FREE_PAGES || nvs_ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "NVS 需要擦除重建");
+        nvs_flash_erase();
+        nvs_ret = nvs_flash_init();
+    }
+    ESP_LOGI(TAG, "NVS 初始化完成");
+
+    /* ---- 提前加载传感器校准参数 (LCD DMA 启动后 spi_flash_read 会 cache error) ---- */
+    sensor_manager_preload_calib();
+
     /* ---- LCD 硬件初始化 (ST7701S 软件 SPI) ---- */
     ESP_LOGI(TAG, "初始化 LCD 硬件");
     Lcd_Initialize();
@@ -1288,7 +1301,6 @@ void app_main(void)
         .data_width = 16,
         .num_fbs = 2,
         .bounce_buffer_size_px = LCD_H_RES * 40,
-        .dma_burst_size = 64,
         .clk_src = LCD_CLK_SRC_PLL240M,
         .disp_gpio_num = -1,
         .pclk_gpio_num = PIN_PCLK,

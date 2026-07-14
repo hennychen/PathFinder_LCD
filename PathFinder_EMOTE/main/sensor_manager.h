@@ -44,6 +44,12 @@ typedef struct {
 esp_err_t sensor_manager_init(i2c_master_bus_handle_t bus);
 
 /**
+ * @brief 预加载校准参数 (必须在 LCD DMA 启动前调用)
+ *        NVS flash 读取与 RGB LCD bounce-buffer DMA ISR 不兼容
+ */
+void sensor_manager_preload_calib(void);
+
+/**
  * @brief 获取最新环境数据快照 (线程安全)
  */
 esp_err_t sensor_manager_get_env(env_snapshot_t *out);

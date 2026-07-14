@@ -966,6 +966,7 @@ CONFIG_PARTITION_TABLE_MD5=y
 #
 # Example Configuration
 #
+# default:
 # CONFIG_EXAMPLE_DOUBLE_FB is not set
 CONFIG_EXAMPLE_USE_BOUNCE_BUFFER=y
 # default:
@@ -2239,8 +2240,8 @@ CONFIG_ESP_INTR_IN_IRAM=y
 #
 # ESP-Driver:LCD Controller Configurations
 #
-CONFIG_LCD_RGB_ISR_IRAM_SAFE=y
-CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
+# CONFIG_LCD_RGB_ISR_IRAM_SAFE is not set
+# CONFIG_LCD_RGB_RESTART_IN_VSYNC is not set
 # default:
 # CONFIG_LCD_ENABLE_DEBUG_LOG is not set
 # end of ESP-Driver:LCD Controller Configurations

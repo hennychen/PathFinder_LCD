@@ -63,6 +63,12 @@ static void calib_load(void)
     }
 }
 
+/* 公开接口：提前加载校准参数 (LCD DMA 启动前调用) */
+void sensor_manager_preload_calib(void)
+{
+    calib_load();
+}
+
 /* 保存校准参数到 NVS */
 static void calib_save(void)
 {
@@ -187,16 +193,8 @@ esp_err_t sensor_manager_init(i2c_master_bus_handle_t bus)
 
     esp_err_t ret;
 
-    /* 初始化 NVS */
-    esp_err_t nvs_ret = nvs_flash_init();
-    if (nvs_ret == ESP_ERR_NVS_NO_FREE_PAGES || nvs_ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_LOGW(TAG, "NVS 需要擦除重建");
-        nvs_flash_erase();
-        nvs_ret = nvs_flash_init();
-    }
-
-    /* 加载校准参数 */
-    calib_load();
+    /* NVS 初始化 + 校准参数加载已由 app_main 提前完成
+     * (RGB LCD DMA 运行后 spi_flash_read 会触发 cache error) */
 
     /* 初始化各驱动 (非致命错误，某传感器缺失不影响其他) */
     ret = drv_aht20_init(bus, 0);
