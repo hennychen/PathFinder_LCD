@@ -11,6 +11,7 @@
  */
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -29,8 +30,9 @@ static const char *TAG = "flight_inst";
 #define FI_SCREEN_SIZE         480
 #define FI_SCREEN_CENTER       240
 
-#define FI_UPDATE_PERIOD_US    100000    /* 10Hz (100ms) — 降低 PSRAM 带宽争抢 */
+#define FI_UPDATE_PERIOD_US    50000     /* 20Hz (50ms) */
 #define FI_ENV_PERIOD_US       1000000   /* 1Hz */
+#define FI_RENDER_THRESHOLD    0.3f      /* 角度变化阈值，低于此值跳过渲染 */
 
 #define FI_PITCH_SCALE         3         /* px/度 (canvas 内) */
 #define FI_PITCH_MAX           45.0f     /* 俯仰钳制范围 (±45°) */
@@ -56,9 +58,7 @@ static const char *TAG = "flight_inst";
 /* ===================== 模块状态 ===================== */
 static lv_obj_t *s_overlay     = NULL;
 static lv_obj_t *s_page_att    = NULL;
-static lv_obj_t *s_page_detail = NULL;   /* 详细数值页 */
 static bool      s_visible     = false;
-static bool      s_detail_mode = false;   /* true=详细页, false=姿态页 */
 
 /* 姿态页对象 */
 static lv_obj_t   *s_canvas       = NULL;
@@ -75,17 +75,19 @@ static lv_obj_t              *s_alt_label    = NULL;
 static lv_obj_t              *s_bar_bar      = NULL;   /* 气压条形柱 */
 static lv_obj_t              *s_bar_label    = NULL;
 
-/* 详细页标签 */
-static lv_obj_t *s_det_labels[10] = {NULL};
-
 /* 时间戳 */
 static int64_t s_last_update_us     = 0;
 static int64_t s_last_env_update_us = 0;
 
+/* 增量渲染跟踪 */
+static float s_last_render_pitch = 999.0f;
+static float s_last_render_roll  = 999.0f;
+
+/* 俯仰刻度标签 (6 条刻度线 × 左右两侧 = 12 个标签) */
+static lv_obj_t *s_pitch_labels[6][2] = {NULL};
+
 /* ===================== 前向声明 ===================== */
 static void att_page_click_cb(lv_event_t *e);
-static void att_page_longpress_cb(lv_event_t *e);
-static void detail_back_cb(lv_event_t *e);
 
 /* ===================== 辅助函数 ===================== */
 
@@ -107,79 +109,76 @@ static void position_compass_tick(lv_obj_t *label, int16_t radius, int16_t beari
     lv_obj_align(label, LV_ALIGN_CENTER, dx, dy);
 }
 
-/* 创建胶囊式按钮 */
-static lv_obj_t *create_capsule_btn(lv_obj_t *parent, const char *text,
-                                     lv_event_cb_t cb, lv_coord_t w, lv_coord_t h)
-{
-    lv_obj_t *btn = lv_obj_create(parent);
-    lv_obj_set_size(btn, w, h);
-    lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(0x333344), 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, 0, 0);
-    lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_pad_all(btn, 0, 0);
-
-    lv_obj_t *lbl = lv_label_create(btn);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
-    lv_label_set_text(lbl, text);
-    lv_obj_center(lbl);
-
-    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
-    return btn;
-}
-
 /* ===================== 画布渲染：姿态指引仪 ===================== */
 
-/* 像素级绘制天空/大地/地平线/俯仰刻度，绕过 LVGL transform_angle + clip_corner 缺陷 */
+/* 像素级绘制天空/大地/地平线/俯仰刻度，绕过 LVGL transform_angle + clip_corner 缺陷
+ * 优化：memset预填充黑色 + 行裁剪跳过圆外像素 + 预计算 + 增量跳过 */
 static void render_horizon_canvas(float pitch, float roll)
 {
     if (!s_canvas_buf) return;
+
+    /* 增量跳过：角度变化小于阈值时不重绘 */
+    float dp = fabsf(pitch - s_last_render_pitch);
+    float dr = fabsf(roll  - s_last_render_roll);
+    if (dp < FI_RENDER_THRESHOLD && dr < FI_RENDER_THRESHOLD) {
+        return;  /* 无显著变化，跳过整帧渲染 */
+    }
+    s_last_render_pitch = pitch;
+    s_last_render_roll  = roll;
 
     float roll_rad = roll * (float)M_PI / 180.0f;
     float cos_r = cosf(roll_rad);
     float sin_r = sinf(roll_rad);
 
     const int size = FI_CANVAS_SIZE;
-    const int half = size / 2;             /* 200 */
-    const int radius_sq = half * half;
+    const int half = size / 2;             /* 100 */
+    const int radius   = half;
+    const int radius_sq = radius * radius;
     const float pitch_off = pitch * FI_PITCH_SCALE;
     const float cy = (float)half + pitch_off;
 
-    /* 俯仰刻度 sd 值: ±30=±10°, ±60=±20°, ±90=±30° (基于 FI_PITCH_SCALE=3) */
+    /* 俯仰刻度 sd 值 (canvas 像素，sd>0=天空/仰角) */
     static const int tick_sd[] = {30, -30, 60, -60, 90, -90};
-    const int tick_half_w = 22;            /* 刻度线长度一半 (canvas 坐标) */
+    const int tick_half_w = 22;  /* 刻度线半宽 (canvas px) */
 
     lv_color_t *buf = s_canvas_buf;
 
+    /* memset 预填充全黑 (RGB565 黑色 = 0x0000) */
+    memset(buf, 0, size * size * sizeof(lv_color_t));
+
+    /* 仅渲染圆内像素，逐行计算水平边界 */
     for (int y = 0; y < size; y++) {
         int dy_c = y - half;
+        int dy_sq = dy_c * dy_c;
+        if (dy_sq > radius_sq) continue;   /* 整行在圆外 */
+
+        /* 计算该行圆内 x 范围 */
+        int x_ext = (int)sqrtf((float)(radius_sq - dy_sq));
+        int x_start = half - x_ext;
+        int x_end   = half + x_ext;
+        if (x_start < 0) x_start = 0;
+        if (x_end >= size) x_end = size - 1;
+
         float dy_h = (float)y - cy;
+        float cos_r_dy_h = cos_r * dy_h;   /* 预计算：内循环少一次乘法 */
 
-        for (int x = 0; x < size; x++) {
+        int row_base = y * size;
+        for (int x = x_start; x <= x_end; x++) {
             int dx = x - half;
-            int idx = y * size + x;
-
-            /* 圆外像素 → 黑色 */
-            if (dx * dx + dy_c * dy_c > radius_sq) {
-                buf[idx] = lv_color_black();
-                continue;
-            }
+            int idx = row_base + x;
 
             /* 带符号距离: sd>0 → 天空, sd<0 → 大地 */
-            float sd = dx * sin_r - dy_h * cos_r;
+            float sd = (float)dx * sin_r - cos_r_dy_h;
 
-            /* 地平线 (~2px 宽, 全宽) */
+            /* 地平线 (~2px 宽) */
             if (fabsf(sd) <= 1.0f) {
                 buf[idx] = lv_color_white();
                 continue;
             }
 
-            /* 俯仰刻度线 (±10°/±20°/±30°, 仅在 tick_half_w 范围内) */
+            /* 俯仰刻度线 */
             bool is_tick = false;
-            float td = dx * cos_r + dy_h * sin_r;
+            float td = (float)dx * cos_r + dy_h * sin_r;
             if (fabsf(td) <= tick_half_w) {
                 for (int t = 0; t < 6; t++) {
                     if (fabsf(sd - (float)tick_sd[t]) <= 1.0f) {
@@ -290,6 +289,18 @@ static void create_attitude_page(lv_obj_t *parent)
         position_roll_tick(tick, FI_ROLL_ARC_RADIUS, (int16_t)r);
     }
 
+    /* ---- 俯仰刻度度数标签 (横线两端: 10/20/30) ---- */
+    static const char *pitch_deg[] = {"10", "10", "20", "20", "30", "30"};
+    for (int i = 0; i < 6; i++) {
+        for (int side = 0; side < 2; side++) {
+            s_pitch_labels[i][side] = lv_label_create(s_page_att);
+            lv_obj_set_style_text_font(s_pitch_labels[i][side], &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_color(s_pitch_labels[i][side], lv_color_white(), 0);
+            lv_label_set_text(s_pitch_labels[i][side], pitch_deg[i]);
+            lv_obj_clear_flag(s_pitch_labels[i][side], LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        }
+    }
+
     /* ---- 横滚指针 (随 roll 旋转) ---- */
     s_roll_pointer = lv_obj_create(s_page_att);
     lv_obj_set_size(s_roll_pointer, 4, 14);
@@ -383,107 +394,28 @@ static void create_attitude_page(lv_obj_t *parent)
     lv_label_set_text(s_bar_label, "--");
     lv_obj_align(s_bar_label, LV_ALIGN_CENTER, -155, 72);
 
-    /* 点击进入详情页 + 长按退出回表情页 */
+    /* 点击退出回表情页 */
     lv_obj_add_flag(s_page_att, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_page_att, att_page_click_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(s_page_att, att_page_longpress_cb, LV_EVENT_LONG_PRESSED, NULL);
 
     /* 底部提示标签 */
     lv_obj_t *hint = lv_label_create(s_page_att);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x666688), 0);
-    lv_label_set_text(hint, "tap: detail  ·  hold: exit");
+    lv_label_set_text(hint, "tap: exit");
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -18);
 
     /* 默认可见 (第1页) */
     lv_obj_clear_flag(s_page_att, LV_OBJ_FLAG_HIDDEN);
 }
 
-/* ===================== 第2页：详细数值页 ===================== */
-
-static void create_detail_page(lv_obj_t *parent)
-{
-    s_page_detail = lv_obj_create(parent);
-    lv_obj_set_size(s_page_detail, FI_SCREEN_SIZE, FI_SCREEN_SIZE);
-    lv_obj_center(s_page_detail);
-    lv_obj_clear_flag(s_page_detail, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(s_page_detail, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(s_page_detail, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(s_page_detail, 0, 0);
-    lv_obj_set_style_pad_all(s_page_detail, 0, 0);
-    lv_obj_set_style_radius(s_page_detail, 0, 0);
-
-    /* 标题 */
-    lv_obj_t *title = lv_label_create(s_page_detail);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_label_set_text(title, "Sensor Data");
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 30);
-
-    /* 数据行: 两列布局 */
-    const char *names[] = {
-        "Pitch",   "Roll",
-        "Heading", "Altitude",
-        "Pressure","Temp",
-        "Humidity","UV Index",
-        "UV Volt", ""
-    };
-    const lv_coord_t y_start = 80;
-    const lv_coord_t row_h   = 38;
-    for (int i = 0; i < 9; i++) {
-        int col = i % 2;
-        int row = i / 2;
-        lv_coord_t x = (col == 0) ? -110 : 60;
-        lv_coord_t y = y_start + row * row_h;
-
-        /* 标签名 */
-        lv_obj_t *n = lv_label_create(s_page_detail);
-        lv_obj_set_style_text_font(n, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(n, lv_color_hex(0x8b949e), 0);
-        lv_label_set_text(n, names[i]);
-        lv_obj_align(n, LV_ALIGN_CENTER, x, y - 8);
-
-        /* 数值 */
-        s_det_labels[i] = lv_label_create(s_page_detail);
-        lv_obj_set_style_text_font(s_det_labels[i], &lv_font_montserrat_16, 0);
-        lv_obj_set_style_text_color(s_det_labels[i], lv_color_white(), 0);
-        lv_label_set_text(s_det_labels[i], "--");
-        lv_obj_align(s_det_labels[i], LV_ALIGN_CENTER, x, y + 10);
-    }
-
-    /* 返回按钮 */
-    create_capsule_btn(s_page_detail, "< Back", detail_back_cb, 90, 34);
-    lv_obj_align(lv_obj_get_child(s_page_detail, -1), LV_ALIGN_BOTTOM_MID, 0, -18);
-
-    /* 默认隐藏 */
-    lv_obj_add_flag(s_page_detail, LV_OBJ_FLAG_HIDDEN);
-}
-
 /* ===================== 事件回调 ===================== */
 
-/* 姿态页点击：进入详情页 */
+/* 姿态页点击：退出回表情页 */
 static void att_page_click_cb(lv_event_t *e)
 {
     (void)e;
-    s_detail_mode = true;
-    lv_obj_add_flag(s_page_att, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(s_page_detail, LV_OBJ_FLAG_HIDDEN);
-}
-
-/* 姿态页长按：退出回表情页 */
-static void att_page_longpress_cb(lv_event_t *e)
-{
-    (void)e;
     flight_instruments_hide();
-}
-
-/* 详情页返回：回到姿态页 */
-static void detail_back_cb(lv_event_t *e)
-{
-    (void)e;
-    s_detail_mode = false;
-    lv_obj_add_flag(s_page_detail, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(s_page_att, LV_OBJ_FLAG_HIDDEN);
 }
 
 /* ===================== 公开 API ===================== */
@@ -504,9 +436,6 @@ void flight_instruments_create(lv_obj_t *parent)
     /* 创建姿态页 */
     create_attitude_page(s_overlay);
 
-    /* 创建详情页 */
-    create_detail_page(s_overlay);
-
     /* 默认隐藏 */
     lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
     s_visible = false;
@@ -526,10 +455,8 @@ void flight_instruments_hide(void)
 {
     if (!s_overlay) return;
     s_visible = false;
-    s_detail_mode = false;
     lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_page_att, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_page_detail, LV_OBJ_FLAG_HIDDEN);
 }
 
 bool flight_instruments_is_visible(void)
@@ -551,39 +478,6 @@ void flight_instruments_update(void)
 
     char buf[32];
 
-    /* ---- 详情页模式：只更新数值 ---- */
-    if (s_detail_mode) {
-        snprintf(buf, sizeof(buf), "%+.1f\xc2\xb0", pitch);
-        lv_label_set_text(s_det_labels[0], buf);
-        snprintf(buf, sizeof(buf), "%+.1f\xc2\xb0", roll);
-        lv_label_set_text(s_det_labels[1], buf);
-        /* Heading 暂无数据源 */
-        lv_label_set_text(s_det_labels[2], "---");
-
-        env_snapshot_t env;
-        if (sensor_manager_get_env(&env) == ESP_OK) {
-            snprintf(buf, sizeof(buf), "%.1fm", env.bmp280.altitude);
-            lv_label_set_text(s_det_labels[3], buf);
-
-            float hpa = env.bmp280.pressure / 100.0f;
-            snprintf(buf, sizeof(buf), "%.1fhPa", hpa);
-            lv_label_set_text(s_det_labels[4], buf);
-
-            snprintf(buf, sizeof(buf), "%.1f\xc2\xb0" "C", env.bmp280.temperature);
-            lv_label_set_text(s_det_labels[5], buf);
-
-            snprintf(buf, sizeof(buf), "%.1f%%", env.aht20.humidity);
-            lv_label_set_text(s_det_labels[6], buf);
-
-            snprintf(buf, sizeof(buf), "%.1f", env.uv.uv_index);
-            lv_label_set_text(s_det_labels[7], buf);
-
-            snprintf(buf, sizeof(buf), "%.3fV", env.uv.voltage);
-            lv_label_set_text(s_det_labels[8], buf);
-        }
-        return;
-    }
-
     /* ---- 姿态页模式：渲染画布 + 更新仪表 ---- */
     if (!s_canvas_buf) return;
 
@@ -595,6 +489,36 @@ void flight_instruments_update(void)
     if (r_clamped < -FI_ROLL_MAX) r_clamped = -FI_ROLL_MAX;
 
     render_horizon_canvas(p_clamped, r_clamped);
+
+    /* 俯仰刻度度数标签定位 (随 pitch/roll 旋转移动) */
+    {
+        float roll_rad = r_clamped * (float)M_PI / 180.0f;
+        float cr = cosf(roll_rad);
+        float sr = sinf(roll_rad);
+        float pitch_off = p_clamped * FI_PITCH_SCALE;
+        static const int tick_sd[] = {30, -30, 60, -60, 90, -90};
+        const int label_td = 30;  /* 刻度线半宽 22 + 8px 间距 (canvas px) */
+
+        for (int i = 0; i < 6; i++) {
+            float sd = (float)tick_sd[i];
+            for (int side = 0; side < 2; side++) {
+                float td = (side == 0) ? -(float)label_td : (float)label_td;
+                /* 从旋转坐标系转换到显示坐标 (2x zoom) */
+                float dx = cr * td + sr * sd;
+                float dy = pitch_off + sr * td - cr * sd;
+                int16_t disp_x = (int16_t)(dx * 2);
+                int16_t disp_y = (int16_t)(dy * 2);
+                /* 超出圆形可视区则隐藏 */
+                int32_t dist_sq = (int32_t)disp_x * disp_x + (int32_t)disp_y * disp_y;
+                if (dist_sq > 185 * 185) {
+                    lv_obj_add_flag(s_pitch_labels[i][side], LV_OBJ_FLAG_HIDDEN);
+                } else {
+                    lv_obj_clear_flag(s_pitch_labels[i][side], LV_OBJ_FLAG_HIDDEN);
+                    lv_obj_align(s_pitch_labels[i][side], LV_ALIGN_CENTER, disp_x, disp_y);
+                }
+            }
+        }
+    }
 
     /* 横滚指针旋转 */
     int16_t roll_tenth = (int16_t)(r_clamped * 10);
