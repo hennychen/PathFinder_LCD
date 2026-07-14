@@ -552,5 +552,21 @@ void flight_instruments_update(void)
             snprintf(buf, sizeof(buf), "%.0f", hpa);
             lv_label_set_text(s_bar_label, buf);
         }
+
+        /* 指南针方位角 (MPU-9250 磁力计) */
+        imu_snapshot_t imu;
+        if (sensor_manager_get_imu(&imu) == ESP_OK && imu.imu.mag_valid) {
+            float mx = imu.imu.mag[0];
+            float my = imu.imu.mag[1];
+            /* 计算方位角 (atan2 返回 -PI~+PI, 转换为 0~360°) */
+            float heading = atan2f(my, mx) * 180.0f / (float)M_PI;
+            if (heading < 0) heading += 360.0f;
+            /* 更新指南针标签 */
+            snprintf(buf, sizeof(buf), "%03.0f°", heading);
+            lv_label_set_text(s_compass_hdg, buf);
+        } else {
+            /* 磁力计不可用 (MPU-6500 或初始化失败) */
+            lv_label_set_text(s_compass_hdg, "N/A");
+        }
     }
 }

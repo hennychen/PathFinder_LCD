@@ -14,7 +14,7 @@
 #define MOTION_ENGINE_H
 
 #include "esp_err.h"
-#include "drv_mpu6050.h"
+#include "drv_mpu9250.h"
 
 /**
  * @brief 运动事件类型（按优先级从高到低排列）
@@ -46,7 +46,7 @@ esp_err_t motion_engine_init(void);
  * @param imu 最新 IMU 数据
  * @return 当前检测到的运动事件（经过优先级仲裁+防抖）
  */
-motion_event_t motion_engine_process(const mpu6050_data_t *imu);
+motion_event_t motion_engine_process(const mpu9250_data_t *imu);
 
 /**
  * @brief 获取最新俯仰角和横滚角（度）

@@ -3,7 +3,7 @@
  * @brief PathFinder EMOTE — 480×480 圆形屏 车载智能表情终端
  *
  * 硬件：TK021F2699 (ST7701S RGB LCD + CST3530 触摸 + ESP32-S3)
- * 传感器：AHT20(温湿度) + BMP280(气压) + MPU6050(姿态) + GUVA-S12SD(UV)
+ * 传感器：AHT20(温湿度) + BMP280(气压) + MPU-9250/6500(姿态) + GUVA-S12SD(UV)
  *
  * UI 布局：极简胶囊式（EAF 优先）
  *   - EAF 表情居中最大化 (330×330)，始终可见

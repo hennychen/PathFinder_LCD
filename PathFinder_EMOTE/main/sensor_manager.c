@@ -137,8 +137,8 @@ static void imu_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(200));
 
     while (1) {
-        mpu6050_data_t data;
-        if (drv_mpu6050_read(&data) == ESP_OK) {
+        mpu9250_data_t data;
+        if (drv_mpu9250_read(&data) == ESP_OK) {
             imu_snapshot_t snap;
             snap.imu = data;
             snap.timestamp_us = esp_timer_get_time();
@@ -210,8 +210,8 @@ esp_err_t sensor_manager_init(i2c_master_bus_handle_t bus)
     /* 应用校准参数到驱动 */
     drv_bmp280_apply_calib(&s_calib_cfg);
 
-    ret = drv_mpu6050_init(bus, 0);
-    if (ret != ESP_OK) ESP_LOGW(TAG, "MPU6050 初始化失败 (跳过)");
+    ret = drv_mpu9250_init(bus, 0);
+    if (ret != ESP_OK) ESP_LOGW(TAG, "MPU-9250/6500 初始化失败 (跳过)");
 
     ret = drv_uv_init(UV_ADC_UNIT, UV_ADC_CHANNEL);
     if (ret != ESP_OK) ESP_LOGW(TAG, "UV ADC 初始化失败 (跳过)");

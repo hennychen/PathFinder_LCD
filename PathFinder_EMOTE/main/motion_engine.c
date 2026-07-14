@@ -180,7 +180,7 @@ void motion_engine_calibrate(void)
     (void)acc_sum; (void)gyro_sum; (void)count;
 }
 
-motion_event_t motion_engine_process(const mpu6050_data_t *imu)
+motion_event_t motion_engine_process(const mpu9250_data_t *imu)
 {
     if (imu == NULL) return s_state.current_event;
 

@@ -4,7 +4,7 @@
  *
  * 架构：
  *   env_task @1Hz  → AHT20 + BMP280 + UV  (环境数据)
- *   imu_task @50Hz → MPU6050              (姿态数据)
+ *   imu_task @50Hz → MPU-9250/6500        (姿态数据)
  *
  * 线程安全：env/imu 各一把互斥锁
  */
@@ -15,7 +15,7 @@
 #include "driver/i2c_master.h"
 #include "drv_aht20.h"
 #include "drv_bmp280.h"
-#include "drv_mpu6050.h"
+#include "drv_mpu9250.h"
 #include "drv_uv_adc.h"
 
 /* ── 数据快照结构 ── */
@@ -30,7 +30,7 @@ typedef struct {
 
 /** IMU 原始数据 (高频更新 50Hz，只保持最新值) */
 typedef struct {
-    mpu6050_data_t imu;
+    mpu9250_data_t imu;
     int64_t        timestamp_us;
 } imu_snapshot_t;
 
