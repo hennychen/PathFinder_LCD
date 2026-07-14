@@ -328,7 +328,7 @@ class _ConnectedView extends StatelessWidget {
     final sensors = [
       ('AHT20', AppColors.motionPrimary),
       ('BMP280', AppColors.motionPrimary),
-      ('MPU6050', AppColors.motionPrimary),
+      ('MPU9250', AppColors.motionPrimary),
       ('UV', AppColors.motionPrimary),
     ];
 

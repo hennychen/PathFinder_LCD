@@ -221,7 +221,7 @@ class _ConnectionScreenState extends ConsumerState<ConnectionScreen> {
               ),
               SizedBox(width: 8),
               Text(
-                '✓MPU6050',
+                '✓MPU9250',
                 style: TextStyle(color: AppColors.motionPrimary, fontSize: 12),
               ),
               SizedBox(width: 8),
