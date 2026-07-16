@@ -68,4 +68,10 @@ const char *wifi_config_manager_get_ip(void);
  */
 void wifi_config_manager_register_cb(wifi_prov_state_cb_t cb);
 
+/**
+ * @brief 跳过配网：停止 AP 模式与 Web Portal，进入 IDLE 状态
+ *        不清除已有凭据，不重启。用户可通过 reset_wifi 重新配网。
+ */
+esp_err_t wifi_config_manager_skip_provisioning(void);
+
 #endif /* WIFI_CONFIG_MANAGER_H */

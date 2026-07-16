@@ -340,3 +340,21 @@ void wifi_config_manager_register_cb(wifi_prov_state_cb_t cb)
 {
     s_state_cb = cb;
 }
+
+esp_err_t wifi_config_manager_skip_provisioning(void)
+{
+    ESP_LOGI(TAG, "跳过配网, 停止 AP 模式 + Web Portal");
+
+    /* 停止 Web Portal HTTP 服务器 */
+    if (s_state == WIFI_PROV_STATE_PROVISIONING) {
+        web_portal_stop();
+    }
+
+    /* 切换到 NULL 模式以关闭 AP, 降低功耗 */
+    if (s_wifi_started) {
+        esp_wifi_set_mode(WIFI_MODE_NULL);
+    }
+
+    s_state = WIFI_PROV_STATE_IDLE;
+    return ESP_OK;
+}

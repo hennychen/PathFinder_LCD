@@ -24,6 +24,7 @@ static lv_obj_t *s_status_capsule_lbl = NULL;
 static lv_obj_t *s_progress_bar = NULL;
 static lv_obj_t *s_skip_btn = NULL;
 static lv_obj_t *s_pulse_dots[3] = {NULL};
+static provision_skip_cb_t s_skip_cb = NULL;
 
 /* 脉冲动画 */
 static lv_anim_t s_pulse_anim;
@@ -32,11 +33,14 @@ static bool s_pulse_active = false;
 /* 前向声明 */
 static void pulse_stop(void);
 
-/* 跳过按钮回调 */
+/* 跳过按钮回调: 先通知业务层停 AP，再销毁 UI */
 static void skip_btn_cb(lv_event_t *e)
 {
     (void)e;
     pulse_stop();
+    if (s_skip_cb) {
+        s_skip_cb();
+    }
     if (s_overlay) {
         lv_obj_del(s_overlay);
         s_overlay = NULL;
@@ -341,4 +345,9 @@ void provision_screen_destroy(void)
 bool provision_screen_is_visible(void)
 {
     return s_overlay != NULL;
+}
+
+void provision_screen_register_skip_cb(provision_skip_cb_t cb)
+{
+    s_skip_cb = cb;
 }

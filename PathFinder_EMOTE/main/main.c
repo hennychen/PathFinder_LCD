@@ -1104,6 +1104,13 @@ static void on_wifi_prov_state(wifi_prov_state_t state, const char *ssid, const 
     cJSON_Delete(json);
 }
 
+/* ===================== Skip 配网回调 ===================== */
+static void on_prov_skip(void)
+{
+    ESP_LOGI(TAG, "用户跳过 Wi-Fi 配网, 进入 EAF 表情页");
+    wifi_config_manager_skip_provisioning();
+}
+
 /* ===================== BLE C5 Write 回调 ===================== */
 static void on_ble_wifi_write(const char *json_str)
 {
@@ -1412,6 +1419,7 @@ void app_main(void)
     /* ---- Wi-Fi 配置管理器 ---- */
     ESP_LOGI(TAG, "初始化 Wi-Fi 配置管理器");
     wifi_config_manager_register_cb(on_wifi_prov_state);
+    provision_screen_register_skip_cb(on_prov_skip);
     ble_gatt_register_wifi_write_cb(on_ble_wifi_write);
     wifi_config_manager_init();
 

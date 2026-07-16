@@ -40,4 +40,17 @@ void provision_screen_destroy(void);
  */
 bool provision_screen_is_visible(void);
 
+/**
+ * @brief Skip 按钮回调函数类型
+ *        用户点击 Skip 后由 provision_screen 内部销毁 UI，
+ *        回调中只需处理 Wi-Fi AP 停止等业务逻辑
+ */
+typedef void (*provision_skip_cb_t)(void);
+
+/**
+ * @brief 注册 Skip 按钮回调
+ *        必须在 provision_screen_create() 之前调用
+ */
+void provision_screen_register_skip_cb(provision_skip_cb_t cb);
+
 #endif /* PROVISION_SCREEN_H */
