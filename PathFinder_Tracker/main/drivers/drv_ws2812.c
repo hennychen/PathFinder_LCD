@@ -2,6 +2,8 @@
 #include "tracker_config.h"
 #include "led_strip.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "drv_ws2812";
 
@@ -35,6 +37,16 @@ esp_err_t drv_ws2812_init(void)
     }
 
     led_strip_clear(s_strip);
+
+    /* Power-on self-test: light all LEDs red for 500ms to verify wiring. */
+    for (int i = 0; i < WS2812_LED_COUNT; i++) {
+        led_strip_set_pixel(s_strip, i, 60, 0, 0);
+    }
+    led_strip_refresh(s_strip);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    led_strip_clear(s_strip);
+    led_strip_refresh(s_strip);
+
     ESP_LOGI(TAG, "WS2812 initialised: %d LEDs on GPIO%d", WS2812_LED_COUNT, WS2812_GPIO);
     return ESP_OK;
 }

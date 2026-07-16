@@ -70,6 +70,10 @@
 #define CAM_PIN_SIOC    GPIO_NUM_5   /* SCCB SCL (I2C0) */
 #define CAM_XCLK_FREQ   16000000     /* 16MHz */
 
+/* ======================== Mesh 组网 ======================== */
+/* A板(EMOTE)=ROOT, B板(Tracker)=CHILD */
+#define MESH_ROLE_NODE           0   /* 0=CHILD, 1=ROOT (defined here for reference) */
+
 /* ======================== 状态机枚举 ======================== */
 typedef enum {
     TRACKER_STATE_IDLE = 0,

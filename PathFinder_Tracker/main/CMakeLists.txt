@@ -11,6 +11,9 @@ idf_component_register(
         "vision/face_detector.cpp"
         "vision/face_tracker.c"
         "vision/vision_task.c"
+        "comm/mesh_protocol.c"
+        "comm/mesh_espnow.c"
+        "comm/mesh_node.c"
     INCLUDE_DIRS
         "."
         "drivers"
@@ -27,4 +30,9 @@ idf_component_register(
         nvs_flash
         es7210
         led_strip
+        esp_wifi
+        esp_now
+        esp_mesh
+        esp_netif
+        esp_event
 )
