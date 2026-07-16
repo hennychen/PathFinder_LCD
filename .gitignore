@@ -6,6 +6,11 @@ PathFinder_EMOTE/.cache/
 PathFinder_EMOTE/managed_components/
 PathFinder_EMOTE/dependencies.lock
 
+AcousticEye/AcousticEye/build/
+AcousticEye/AcousticEye/.cache/
+AcousticEye/AcousticEye/managed_components/
+AcousticEye/AcousticEye/dependencies.lock
+
 # Flutter build artifacts
 PathFinder_Dashboard/build/
 PathFinder_Dashboard/.dart_tool/
@@ -19,8 +24,26 @@ PathFinder_Dashboard/android/local.properties
 # Qoder skills cache
 .qoder/skills/
 
+# IDE config
+.vscode/
+.claude/
+
 # OS files
 .DS_Store
 
 # Reference materials (external)
 资料/
+
+# Redundant archives
+AcousticEye.zip
+
+# PDF extracted images
+64074_preview.png
+64074_raw.jpg
+section1_top.png
+section2_details.png
+section3_pins.png
+section4_schematic.png
+section5_photos.png
+section_pins_v2.png
+section_schematic_v2.png

@@ -1,0 +1,6 @@
+## IDF Component Manager Manifest File
+## All hardware components (es7210, led_strip, esp-dsp) are local components under components/
+## No external dependencies needed - avoiding IDF version constraint conflicts
+dependencies:
+  idf:
+    version: '>=4.4'
