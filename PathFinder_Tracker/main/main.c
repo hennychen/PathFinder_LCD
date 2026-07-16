@@ -7,12 +7,14 @@
 #include "drv_servo.h"
 #include "drv_uart_comm.h"
 #include "sound_localizer.h"
+#include "tracker_state_machine.h"
 
 static const char *TAG = "tracker_main";
+static tracker_ctx_t s_tracker_ctx;
 
 void app_main(void)
 {
-    printf("[%s] PathFinder_Tracker booting on ESP32-S3 N16R8\n", TAG);
+    printf("[%s] PathFinder_Tracker Phase 1-2 starting\n", TAG);
 
     /* WS2812 LED ring – initialise before ES7210 so visual feedback is
        available as soon as audio processing begins. */
@@ -47,27 +49,15 @@ void app_main(void)
     sound_localizer_init(ES7210_SAMPLE_RATE);
     sound_localizer_set_threshold(-2.7f);
 
-    static float mic_data[4][256];
-    uint32_t invalid_frame_count = 0;
+    /* Initialise the closed-loop state machine. */
+    tracker_sm_init(&s_tracker_ctx);
 
+    /* Main processing loop. */
+    static float mic_data[4][256];
     while (1) {
         if (drv_es7210_read(mic_data) == ESP_OK) {
             localization_result_t result = sound_localizer_compute(mic_data);
-            if (result.valid) {
-                printf("angle: %.1f deg (conf=%.2f)\n", result.angle, result.confidence);
-                drv_ws2812_show_angle(result.angle);
-                float pan = drv_servo_angle_from_sound(result.angle);
-                drv_servo_set_angle(SERVO_PAN, pan);
-                /* Forward valid angle to Board A (PathFinder_EMOTE). */
-                drv_uart_send_angle(result.angle, 1);
-            } else {
-                /* Periodically notify Board A that no sound source was
-                   detected (every 50 invalid frames). */
-                if (++invalid_frame_count >= 50) {
-                    invalid_frame_count = 0;
-                    drv_uart_send_angle(0, 0);
-                }
-            }
+            tracker_sm_step(&s_tracker_ctx, result.angle, result.valid);
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }

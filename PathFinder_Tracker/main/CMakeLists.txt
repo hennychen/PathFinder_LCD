@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.c"
+        "tracker_state_machine.c"
         "drivers/drv_es7210.c"
         "drivers/drv_servo.c"
         "drivers/drv_ws2812.c"
