@@ -59,6 +59,6 @@ void app_main(void)
             localization_result_t result = sound_localizer_compute(mic_data);
             tracker_sm_step(&s_tracker_ctx, result.angle, result.valid);
         }
-        vTaskDelay(pdMS_TO_TICKS(20));
+        taskYIELD();  /* i2s_channel_read already blocks ~5ms; no extra delay needed */
     }
 }
