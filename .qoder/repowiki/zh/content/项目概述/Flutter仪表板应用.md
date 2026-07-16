@@ -6,12 +6,30 @@
 - [pubspec.yaml](file://PathFinder_Dashboard/pubspec.yaml)
 - [main.dart](file://PathFinder_Dashboard/lib/main.dart)
 - [app.dart](file://PathFinder_Dashboard/lib/app/app.dart)
-- [reactive_ble_service.dart](file://PathFinder_Dashboard/lib/core/ble/reactive_ble_service.dart)
+- [ble_status_chip.dart](file://PathFinder_Dashboard/lib/shared/widgets/ble_status_chip.dart)
+- [ble_provider.dart](file://PathFinder_Dashboard/lib/shared/providers/ble_provider.dart)
+- [sensor_provider.dart](file://PathFinder_Dashboard/lib/shared/providers/sensor_provider.dart)
 - [env_snapshot.dart](file://PathFinder_Dashboard/lib/shared/models/env_snapshot.dart)
+- [imu_snapshot.dart](file://PathFinder_Dashboard/lib/shared/models/imu_snapshot.dart)
+- [emote_info.dart](file://PathFinder_Dashboard/lib/shared/models/emote_info.dart)
+- [metric_card.dart](file://PathFinder_Dashboard/lib/shared/widgets/metric_card.dart)
+- [status_indicator.dart](file://PathFinder_Dashboard/lib/shared/widgets/status_indicator.dart)
 - [environment_screen.dart](file://PathFinder_Dashboard/lib/features/environment/environment_screen.dart)
+- [motion_screen.dart](file://PathFinder_Dashboard/lib/features/motion/motion_screen.dart)
+- [emote_screen.dart](file://PathFinder_Dashboard/lib/features/emote/emote_screen.dart)
+- [history_screen.dart](file://PathFinder_Dashboard/lib/features/history/history_screen.dart)
+- [wifi_setup_screen.dart](file://PathFinder_Dashboard/lib/features/wifi/wifi_setup_screen.dart)
+- [reactive_ble_service.dart](file://PathFinder_Dashboard/lib/core/ble/reactive_ble_service.dart)
 - [database.dart](file://PathFinder_Dashboard/lib/core/storage/database.dart)
 - [2026-07-12-pathfinder-dashboard-flutter-design.md](file://docs/superpowers/specs/2026-07-12-pathfinder-dashboard-flutter-design.md)
 </cite>
+
+## 更新摘要
+**变更内容**   
+- 新增BLE连接状态指示芯片组件，集成到AppBar右上角显示实时连接状态
+- 优化3-Tab布局导航结构，支持环境、运动、表情三个主要功能页面
+- 增强共享层架构文档，包括模型定义、Provider模式和可复用Widget组件的详细说明
+- 完善多设备生态系统集成，提供统一的BLE连接管理和状态同步
 
 ## 目录
 1. [简介](#简介)
@@ -28,6 +46,8 @@
 ## 简介
 本项目为 PathFinder_LCD 的 Flutter 端仪表盘应用（PathFinder_Dashboard），用于通过 BLE 连接 ESP32-S3 车载表情终端，实时采集并可视化环境传感器数据、IMU 运动数据与表情状态，并提供本地历史存储与导出能力。应用采用分层架构（app/core/features/shared），使用 Riverpod 进行状态管理，Drift SQLite 作为持久化层，flutter_reactive_ble 实现 BLE 通信，fl_chart 负责图表渲染。
 
+**更新** 应用现已集成到多设备生态系统架构中，新增了BLE连接处理的AppBar右上角BleStatusChip实现和优化的3-Tab布局导航，同时增强了共享层架构包括模型定义、Provider模式和可复用Widget组件的详细文档。
+
 ## 项目结构
 - 入口与根应用：main.dart 启动 ProviderScope 并运行 PathfinderApp；app.dart 定义底部导航与页面容器。
 - 核心能力：core/ble 提供 BLE 服务接口与真实实现；core/storage 提供 Drift 数据库与 DAO。
@@ -37,20 +57,24 @@
 
 ```mermaid
 graph TB
-A["main.dart<br/>应用入口"] --> B["app.dart<br/>MaterialApp + 导航"]
+A["main.dart<br/>应用入口"] --> B["app.dart<br/>MaterialApp + 3-Tab导航"]
 B --> C["EnvironmentScreen<br/>环境页"]
 B --> D["MotionScreen<br/>运动页"]
 B --> E["EmoteScreen<br/>表情页"]
-C --> F["sensor_provider / ble_provider<br/>Riverpod 状态"]
-F --> G["ReactiveBleService<br/>BLE 订阅与解码"]
-G --> H["EnvSnapshot.fromBle()<br/>C2 帧解码"]
-F --> I["storage_providers / DAO<br/>Drift 写入"]
-I --> J["database.dart<br/>AppDatabase"]
+B --> F["BleStatusChip<br/>BLE状态指示器"]
+F --> G["connectionStateProvider<br/>Riverpod状态"]
+G --> H["ReactiveBleService<br/>BLE订阅与解码"]
+H --> I["EnvSnapshot.fromBle()<br/>C2帧解码"]
+C --> J["sensor_provider / ble_provider<br/>Riverpod状态"]
+J --> K["storage_providers / DAO<br/>Drift写入"]
+K --> L["database.dart<br/>AppDatabase"]
 ```
 
 图示来源
 - [main.dart:1-8](file://PathFinder_Dashboard/lib/main.dart#L1-L8)
 - [app.dart:1-81](file://PathFinder_Dashboard/lib/app/app.dart#L1-L81)
+- [ble_status_chip.dart:1-240](file://PathFinder_Dashboard/lib/shared/widgets/ble_status_chip.dart#L1-L240)
+- [ble_provider.dart:1-15](file://PathFinder_Dashboard/lib/shared/providers/ble_provider.dart#L1-L15)
 - [environment_screen.dart:1-202](file://PathFinder_Dashboard/lib/features/environment/environment_screen.dart#L1-L202)
 - [reactive_ble_service.dart:1-272](file://PathFinder_Dashboard/lib/core/ble/reactive_ble_service.dart#L1-L272)
 - [env_snapshot.dart:1-54](file://PathFinder_Dashboard/lib/shared/models/env_snapshot.dart#L1-L54)
@@ -75,15 +99,18 @@ I --> J["database.dart<br/>AppDatabase"]
 - UI 展示
   - EnvironmentScreen：展示当前环境与趋势图；根据阈值动态配色。
   - MotionScreen、EmoteScreen、HistoryScreen：分别展示 IMU 波形、表情映射与历史统计。
+- **新增** BLE状态指示器
+  - BleStatusChip：AppBar右上角的BLE连接状态芯片，支持呼吸动画、旋转图标、进度指示等多种视觉反馈。
 
 章节来源
 - [reactive_ble_service.dart:1-272](file://PathFinder_Dashboard/lib/core/ble/reactive_ble_service.dart#L1-L272)
 - [env_snapshot.dart:1-54](file://PathFinder_Dashboard/lib/shared/models/env_snapshot.dart#L1-L54)
 - [environment_screen.dart:1-202](file://PathFinder_Dashboard/lib/features/environment/environment_screen.dart#L1-L202)
 - [database.dart:1-31](file://PathFinder_Dashboard/lib/core/storage/database.dart#L1-L31)
+- [ble_status_chip.dart:1-240](file://PathFinder_Dashboard/lib/shared/widgets/ble_status_chip.dart#L1-L240)
 
 ## 架构总览
-应用遵循“UI → Providers → Service → Storage”的分层路径，BLE 数据经 Service 解码后进入 Provider，再分发至 UI 与存储。
+应用遵循"UI → Providers → Service → Storage"的分层路径，BLE 数据经 Service 解码后进入 Provider，再分发至 UI 与存储。
 
 ```mermaid
 sequenceDiagram
@@ -164,6 +191,48 @@ ReactiveBleService --> EmoteInfo : "C4 解码"
 章节来源
 - [reactive_ble_service.dart:1-272](file://PathFinder_Dashboard/lib/core/ble/reactive_ble_service.dart#L1-L272)
 
+### BLE连接状态指示芯片（BleStatusChip）
+**新增** BLE连接状态指示芯片是应用的重要UI组件，提供直观的BLE连接状态反馈。
+
+- 功能特性
+  - 实时显示BLE连接状态（未连接、搜索中、连接中、已连接、失败）
+  - 多种视觉反馈：呼吸脉冲动画、旋转图标、进度指示器
+  - 点击打开连接管理面板
+  - 响应式状态更新，基于Riverpod状态管理
+- 状态表现
+  - disconnected：灰色图标 + 呼吸脉冲动画
+  - scanning：青色搜索图标 + 旋转动画  
+  - connecting/reconnecting：小号进度指示器
+  - connected：绿色图标 + 绿色指示点
+  - failed：红色错误图标
+- 交互设计
+  - 手势识别支持点击操作
+  - 模态底部面板展示连接详情
+  - 流畅的动画过渡效果
+
+```mermaid
+flowchart TD
+A["BleStatusChip"] --> B{"连接状态"}
+B --> |disconnected| C["灰色图标 + 呼吸动画"]
+B --> |scanning| D["青色图标 + 旋转动画"]
+B --> |connecting| E["进度指示器"]
+B --> |connected| F["绿色图标 + 光晕效果"]
+B --> |failed| G["红色错误图标"]
+C --> H["点击打开连接面板"]
+D --> H
+E --> H
+F --> H
+G --> H
+```
+
+图示来源
+- [ble_status_chip.dart:1-240](file://PathFinder_Dashboard/lib/shared/widgets/ble_status_chip.dart#L1-240)
+- [ble_provider.dart:1-15](file://PathFinder_Dashboard/lib/shared/providers/ble_provider.dart#L1-15)
+
+章节来源
+- [ble_status_chip.dart:1-240](file://PathFinder_Dashboard/lib/shared/widgets/ble_status_chip.dart#L1-240)
+- [ble_provider.dart:1-15](file://PathFinder_Dashboard/lib/shared/providers/ble_provider.dart#L1-15)
+
 ### 数据模型（EnvSnapshot）
 - 字段与单位
   - 温度（°C）、湿度（%）、气压（Pa）、海拔（m）、UV 指数
@@ -188,6 +257,62 @@ Build --> End(["返回模型"])
 
 章节来源
 - [env_snapshot.dart:1-54](file://PathFinder_Dashboard/lib/shared/models/env_snapshot.dart#L1-L54)
+
+### 共享层架构增强
+**新增** 共享层架构现在包含完整的模型定义、Provider模式和可复用Widget组件体系。
+
+#### 模型定义层（shared/models）
+- EnvSnapshot：环境数据快照，支持BLE编解码
+- ImuSnapshot：IMU运动数据快照，包含姿态角和加速度信息
+- EmoteInfo：表情状态信息，支持触发条件枚举
+- 所有模型均提供mock工厂方法用于开发测试
+
+#### Provider模式层（shared/providers）
+- ble_provider：BLE服务实例化和连接状态管理
+- sensor_provider：传感器数据流处理，自动持久化到数据库
+- 基于Riverpod的响应式状态管理，支持流式数据更新
+
+#### 可复用Widget组件（shared/widgets）
+- MetricCard：EMA胶囊风格数据卡片，支持数值动画
+- StatusIndicator：通用状态指示器组件
+- AnimatedCounter：数字动画计数器
+- BleStatusChip：BLE连接状态指示芯片
+
+```mermaid
+graph LR
+subgraph "共享层架构"
+A["models/<br/>数据模型定义"] --> B["providers/<br/>Riverpod状态管理"]
+B --> C["widgets/<br/>可复用UI组件"]
+end
+A --> D["EnvSnapshot"]
+A --> E["ImuSnapshot"]
+A --> F["EmoteInfo"]
+B --> G["ble_provider"]
+B --> H["sensor_provider"]
+C --> I["MetricCard"]
+C --> J["StatusIndicator"]
+C --> K["BleStatusChip"]
+```
+
+图示来源
+- [env_snapshot.dart:1-54](file://PathFinder_Dashboard/lib/shared/models/env_snapshot.dart#L1-L54)
+- [imu_snapshot.dart:1-54](file://PathFinder_Dashboard/lib/shared/models/imu_snapshot.dart#L1-L54)
+- [emote_info.dart:1-68](file://PathFinder_Dashboard/lib/shared/models/emote_info.dart#L1-L68)
+- [ble_provider.dart:1-15](file://PathFinder_Dashboard/lib/shared/providers/ble_provider.dart#L1-15)
+- [sensor_provider.dart:1-53](file://PathFinder_Dashboard/lib/shared/providers/sensor_provider.dart#L1-53)
+- [metric_card.dart:1-83](file://PathFinder_Dashboard/lib/shared/widgets/metric_card.dart#L1-83)
+- [status_indicator.dart:1-43](file://PathFinder_Dashboard/lib/shared/widgets/status_indicator.dart#L1-43)
+- [ble_status_chip.dart:1-240](file://PathFinder_Dashboard/lib/shared/widgets/ble_status_chip.dart#L1-240)
+
+章节来源
+- [env_snapshot.dart:1-54](file://PathFinder_Dashboard/lib/shared/models/env_snapshot.dart#L1-L54)
+- [imu_snapshot.dart:1-54](file://PathFinder_Dashboard/lib/shared/models/imu_snapshot.dart#L1-L54)
+- [emote_info.dart:1-68](file://PathFinder_Dashboard/lib/shared/models/emote_info.dart#L1-L68)
+- [ble_provider.dart:1-15](file://PathFinder_Dashboard/lib/shared/providers/ble_provider.dart#L1-15)
+- [sensor_provider.dart:1-53](file://PathFinder_Dashboard/lib/shared/providers/sensor_provider.dart#L1-53)
+- [metric_card.dart:1-83](file://PathFinder_Dashboard/lib/shared/widgets/metric_card.dart#L1-83)
+- [status_indicator.dart:1-43](file://PathFinder_Dashboard/lib/shared/widgets/status_indicator.dart#L1-43)
+- [ble_status_chip.dart:1-240](file://PathFinder_Dashboard/lib/shared/widgets/ble_status_chip.dart#L1-240)
 
 ### 环境数据页面（EnvironmentScreen）
 - 功能
@@ -276,39 +401,56 @@ real sensorValue
   - environment_screen 依赖 providers 与 widgets
   - reactive_ble_service 依赖 models 与 uuids 常量
   - storage 层被 providers 调用以持久化数据
+  - **新增** ble_status_chip 依赖 connectionStateProvider 和主题系统
 
 ```mermaid
 graph LR
-subgraph "UI"
-A["app.dart"] --> B["environment_screen.dart"]
+subgraph "UI层"
+A["app.dart<br/>3-Tab导航"] --> B["environment_screen.dart"]
+A --> C["motion_screen.dart"]
+A --> D["emote_screen.dart"]
+A --> E["ble_status_chip.dart"]
 end
-subgraph "状态"
-C["sensor_provider.dart"]
-D["ble_provider.dart"]
+subgraph "状态管理层"
+F["sensor_provider.dart"]
+G["ble_provider.dart"]
 end
-subgraph "通信"
-E["reactive_ble_service.dart"]
+subgraph "通信层"
+H["reactive_ble_service.dart"]
 end
-subgraph "模型"
-F["env_snapshot.dart"]
+subgraph "模型层"
+I["env_snapshot.dart"]
+J["imu_snapshot.dart"]
+K["emote_info.dart"]
 end
-subgraph "存储"
-G["database.dart"]
+subgraph "存储层"
+L["database.dart"]
 end
-B --> C
-B --> D
-C --> E
-D --> E
-E --> F
-C --> G
-D --> G
+B --> F
+C --> F
+D --> F
+E --> G
+F --> H
+G --> H
+H --> I
+H --> J
+H --> K
+F --> L
+G --> L
 ```
 
 图示来源
 - [app.dart:1-81](file://PathFinder_Dashboard/lib/app/app.dart#L1-L81)
 - [environment_screen.dart:1-202](file://PathFinder_Dashboard/lib/features/environment/environment_screen.dart#L1-L202)
+- [motion_screen.dart:1-202](file://PathFinder_Dashboard/lib/features/motion/motion_screen.dart#L1-L202)
+- [emote_screen.dart:1-202](file://PathFinder_Dashboard/lib/features/emote/emote_screen.dart#L1-L202)
+- [ble_status_chip.dart:1-240](file://PathFinder_Dashboard/lib/shared/widgets/ble_status_chip.dart#L1-240)
+- [sensor_provider.dart:1-53](file://PathFinder_Dashboard/lib/shared/providers/sensor_provider.dart#L1-53)
+- [ble_provider.dart:1-15](file://PathFinder_Dashboard/lib/shared/providers/ble_provider.dart#L1-15)
 - [reactive_ble_service.dart:1-272](file://PathFinder_Dashboard/lib/core/ble/reactive_ble_service.dart#L1-L272)
 - [env_snapshot.dart:1-54](file://PathFinder_Dashboard/lib/shared/models/env_snapshot.dart#L1-L54)
+- [imu_snapshot.dart:1-54](file://PathFinder_Dashboard/lib/shared/models/imu_snapshot.dart#L1-L54)
+- [emote_info.dart:1-68](file://PathFinder_Dashboard/lib/shared/models/emote_info.dart#L1-L68)
 - [database.dart:1-31](file://PathFinder_Dashboard/lib/core/storage/database.dart#L1-L31)
 
 章节来源
@@ -323,6 +465,10 @@ D --> G
   - 开启 WAL 模式减少锁竞争；批量写入或节流写入降低 IO 压力
 - 状态管理
   - 使用 broadcast stream 缓存初始值，避免 UI 卡 loading
+- **新增** BLE状态指示器优化
+  - 使用ConsumerWidget减少不必要的重建
+  - 动画控制器智能启停，避免资源浪费
+  - 状态变化时局部更新，提升渲染性能
 
 [本节为通用指导，无需源码引用]
 
@@ -339,13 +485,19 @@ D --> G
 - 图表无数据/卡顿
   - 现象：loading 或空白
   - 处理：检查 provider 是否收到数据；确认 Stream 初始值已发出；优化窗口大小与重绘范围
+- **新增** BLE状态指示器问题
+  - 现象：状态显示不正确或动画异常
+  - 处理：检查connectionStateProvider是否正确订阅；确认动画控制器生命周期管理
 
 章节来源
 - [reactive_ble_service.dart:1-272](file://PathFinder_Dashboard/lib/core/ble/reactive_ble_service.dart#L1-L272)
 - [env_snapshot.dart:1-54](file://PathFinder_Dashboard/lib/shared/models/env_snapshot.dart#L1-L54)
+- [ble_status_chip.dart:1-240](file://PathFinder_Dashboard/lib/shared/widgets/ble_status_chip.dart#L1-240)
 
 ## 结论
-PathFinder Dashboard 以清晰的层次结构与稳定的 BLE 通信链路，实现了环境、运动与表情数据的实时可视化与本地回溯。通过 Riverpod 与 Drift 的组合，既保证了 UI 响应性，又提供了可靠的数据持久化。后续可在多 Tab 扩展、更多图表维度与云端同步方面持续演进。
+PathFinder Dashboard 以清晰的层次结构与稳定的 BLE 通信链路，实现了环境、运动与表情数据的实时可视化与本地回溯。通过 Riverpod 与 Drift 的组合，既保证了 UI 响应性，又提供了可靠的数据持久化。
+
+**更新** 最新的改进包括集成的BLE连接状态指示芯片、优化的3-Tab布局导航以及增强的共享层架构。这些改进显著提升了用户体验，提供了更直观的连接状态反馈和更流畅的页面切换体验。共享层架构的完善使得代码复用性更强，维护成本更低。后续可在多 Tab 扩展、更多图表维度与云端同步方面持续演进。
 
 [本节为总结，无需源码引用]
 
