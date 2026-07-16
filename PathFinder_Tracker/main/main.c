@@ -67,13 +67,31 @@ void app_main(void)
     /* Initialise the closed-loop state machine. */
     tracker_sm_init(&s_tracker_ctx);
 
-    /* Main processing loop. */
+    /* Main processing loop.
+     *
+     * Audio runs at ~48 kHz with 256-sample frames (~5 ms per DMA read).
+     * Vision messages arrive at ~10 Hz from Core 1.  We poll the
+     * overwrite queue each audio frame — xQueuePeek is non-blocking so
+     * there is zero cost when no new message is available.
+     */
     static float mic_data[4][256];
+    vision_msg_t vmsg;
+
     while (1) {
         if (drv_es7210_read(mic_data) == ESP_OK) {
             localization_result_t result = sound_localizer_compute(mic_data);
             tracker_sm_step(&s_tracker_ctx, result.angle, result.valid);
         }
+
+        /* Check for new vision data (non-blocking).  We peek every ~5 ms
+           but the underlying queue is overwrite-mode so we always see
+           the latest result if one exists. */
+        if (vision_get_latest(&vmsg)) {
+            tracker_sm_step_vision(&s_tracker_ctx, vmsg.face_found,
+                                   vmsg.face_cx, vmsg.face_cy,
+                                   vmsg.face_w, vmsg.face_h);
+        }
+
         taskYIELD();  /* i2s_channel_read already blocks ~5ms; no extra delay needed */
     }
 }

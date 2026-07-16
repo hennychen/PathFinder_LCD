@@ -25,6 +25,11 @@ static const char *TAG = "tracker_sm";
 #define MAX_INVALID_FRAMES    100     /* ~2 s @20 ms/frame → SEARCH           */
 #define SEARCH_DURATION       250     /* ~5 s in SEARCH → IDLE                */
 #define SERVO_STEP_MAX        3.0f    /* Max deg/frame to reduce servo jitter */
+#define FACE_LOST_MAX         15      /* Frames before face→acoustic fallback  */
+
+/* WS2812 indication colours (GRB) */
+#define LED_FACE_COLOR        0x0000FF  /* Green when face-tracking   */
+#define LED_FACE_FOUND_COLOR  0x00FF00  /* Red flash on face detected */
 
 /* ----------------------------------------------------------------- */
 /*  Helpers                                                          */
@@ -69,6 +74,8 @@ void tracker_sm_init(tracker_ctx_t *ctx)
     ctx->last_valid_angle = 0.0f;
     ctx->invalid_count    = 0;
     ctx->search_count     = 0;
+    ctx->face_lost_count  = 0;
+    face_tracker_init(&ctx->face_ctx);
 }
 
 void tracker_sm_step(tracker_ctx_t *ctx, float sound_angle, bool valid)
@@ -156,11 +163,78 @@ void tracker_sm_step(tracker_ctx_t *ctx, float sound_angle, bool valid)
 
     /* ----------------------------------------------------------- */
     case TRACKER_STATE_FACE_TRACK:
-        /* Placeholder – Phase 3 will implement vision-based tracking. */
+        /* Handled entirely by tracker_sm_step_vision().
+           Audio frames are ignored in this state to prevent
+           servo contention between PID and acoustic loops. */
         break;
 
     default:
         ctx->current_state = TRACKER_STATE_IDLE;
+        break;
+    }
+}
+
+/* ----------------------------------------------------------------- */
+/*  Vision-driven state step (called from main loop per vision msg)  */
+/* ----------------------------------------------------------------- */
+
+void tracker_sm_step_vision(tracker_ctx_t *ctx, bool face_found,
+                            int16_t cx, int16_t cy,
+                            uint16_t w, uint16_t h)
+{
+    /* Build face box from vision message */
+    face_box_t box;
+    box.x = (int16_t)(cx - w / 2);
+    box.y = (int16_t)(cy - h / 2);
+    box.width  = w;
+    box.height = h;
+    box.confidence = 1.0f;
+
+    switch (ctx->current_state) {
+
+    case TRACKER_STATE_IDLE:
+    case TRACKER_STATE_ACOUSTIC_TRACK:
+    case TRACKER_STATE_SEARCH:
+        if (face_found) {
+            /* Transition to face tracking */
+            tracker_state_t prev = ctx->current_state;
+            ctx->face_lost_count = 0;
+            face_tracker_init(&ctx->face_ctx);
+            face_tracker_update(&ctx->face_ctx, &box);
+            ctx->current_state = TRACKER_STATE_FACE_TRACK;
+            ESP_LOGI(TAG, "%s -> FACE_TRACK (face detected %dx%d at %d,%d)",
+                     prev == TRACKER_STATE_IDLE ? "IDLE" :
+                     prev == TRACKER_STATE_ACOUSTIC_TRACK ? "ACOUSTIC" : "SEARCH",
+                     w, h, cx, cy);
+            drv_uart_send_state((uint8_t)TRACKER_STATE_FACE_TRACK);
+            drv_ws2812_clear();
+            drv_ws2812_show();
+        }
+        break;
+
+    case TRACKER_STATE_FACE_TRACK:
+        if (face_found) {
+            ctx->face_lost_count = 0;
+            bool moved = face_tracker_update(&ctx->face_ctx, &box);
+            /* Subtle LED feedback: single LED indicates face lock (green) */
+            drv_ws2812_clear();
+            drv_ws2812_set_led(0, 0, 255, 0);
+            drv_ws2812_show();
+        } else {
+            /* No face box — feed NULL to increment lost counter */
+            bool still = face_tracker_update(&ctx->face_ctx, NULL);
+            if (++ctx->face_lost_count >= FACE_LOST_MAX) {
+                /* Fallback: resume acoustic tracking */
+                ctx->current_state = TRACKER_STATE_ACOUSTIC_TRACK;
+                ctx->invalid_count = 0;
+                ESP_LOGI(TAG, "FACE_TRACK -> ACOUSTIC_TRACK (face lost %d frames)",
+                         FACE_LOST_MAX);
+                drv_uart_send_state((uint8_t)TRACKER_STATE_ACOUSTIC_TRACK);
+            }
+        }
+        break;
+
+    default:
         break;
     }
 }
