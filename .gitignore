@@ -11,6 +11,13 @@ AcousticEye/AcousticEye/.cache/
 AcousticEye/AcousticEye/managed_components/
 AcousticEye/AcousticEye/dependencies.lock
 
+PathFinder_Tracker/build/
+PathFinder_Tracker/.cache/
+PathFinder_Tracker/managed_components/
+PathFinder_Tracker/sdkconfig
+PathFinder_Tracker/sdkconfig.old
+PathFinder_Tracker/dependencies.lock
+
 # Flutter build artifacts
 PathFinder_Dashboard/build/
 PathFinder_Dashboard/.dart_tool/
