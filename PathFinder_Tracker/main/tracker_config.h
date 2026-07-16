@@ -20,6 +20,9 @@
 #define ES7210_SAMPLE_RATE          48000
 #define ES7210_I2S_BITS             32
 
+/* ======================== PA_EN 板级音频使能 ======================== */
+#define PA_EN_GPIO                  GPIO_NUM_45  /* 原板 GPIO13,因 OV2640 PCLK 占用迁移 */
+
 /* ======================== WS2812 灯环 ======================== */
 #define WS2812_GPIO                 GPIO_NUM_48
 #define WS2812_LED_COUNT            36
@@ -45,6 +48,25 @@
 #define TTS_BCLK_GPIO               GPIO_NUM_1
 #define TTS_WS_GPIO                 GPIO_NUM_2
 #define TTS_DOUT_GPIO               GPIO_NUM_3
+
+/* ======================== OV2640 摄像头 (DVP) ======================== */
+#define CAM_PIN_PWDN    -1   /* 无电源控制 */
+#define CAM_PIN_RESET   -1   /* 硬件复位, NC */
+#define CAM_PIN_D0      GPIO_NUM_11
+#define CAM_PIN_D1      GPIO_NUM_9
+#define CAM_PIN_D2      GPIO_NUM_8
+#define CAM_PIN_D3      GPIO_NUM_10
+#define CAM_PIN_D4      GPIO_NUM_12
+#define CAM_PIN_D5      GPIO_NUM_18
+#define CAM_PIN_D6      GPIO_NUM_17
+#define CAM_PIN_D7      GPIO_NUM_16
+#define CAM_PIN_VSYNC   GPIO_NUM_6
+#define CAM_PIN_HREF    GPIO_NUM_7
+#define CAM_PIN_PCLK    GPIO_NUM_13
+#define CAM_PIN_XCLK    GPIO_NUM_15
+#define CAM_PIN_SIOD    GPIO_NUM_4   /* SCCB SDA (I2C0) */
+#define CAM_PIN_SIOC    GPIO_NUM_5   /* SCCB SCL (I2C0) */
+#define CAM_XCLK_FREQ   16000000     /* 16MHz */
 
 /* ======================== 状态机枚举 ======================== */
 typedef enum {
