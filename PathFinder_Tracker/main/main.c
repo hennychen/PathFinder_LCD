@@ -5,6 +5,7 @@
 #include "drv_es7210.h"
 #include "drv_ws2812.h"
 #include "drv_servo.h"
+#include "drv_uart_comm.h"
 #include "sound_localizer.h"
 
 static const char *TAG = "tracker_main";
@@ -29,6 +30,14 @@ void app_main(void)
         /* Non-fatal: continue without servo control. */
     }
 
+    /* UART inter-board communication – initialise after servos but before
+       ES7210 so angle data can be forwarded to Board A from the first frame. */
+    ret = drv_uart_init();
+    if (ret != ESP_OK) {
+        printf("[%s] UART comm init FAILED: %s\n", TAG, esp_err_to_name(ret));
+        /* Non-fatal: continue without inter-board communication. */
+    }
+
     ret = drv_es7210_init();
     if (ret != ESP_OK) {
         printf("[%s] ES7210 init FAILED: %s\n", TAG, esp_err_to_name(ret));
@@ -39,6 +48,8 @@ void app_main(void)
     sound_localizer_set_threshold(-2.7f);
 
     static float mic_data[4][256];
+    uint32_t invalid_frame_count = 0;
+
     while (1) {
         if (drv_es7210_read(mic_data) == ESP_OK) {
             localization_result_t result = sound_localizer_compute(mic_data);
@@ -47,6 +58,15 @@ void app_main(void)
                 drv_ws2812_show_angle(result.angle);
                 float pan = drv_servo_angle_from_sound(result.angle);
                 drv_servo_set_angle(SERVO_PAN, pan);
+                /* Forward valid angle to Board A (PathFinder_EMOTE). */
+                drv_uart_send_angle(result.angle, 1);
+            } else {
+                /* Periodically notify Board A that no sound source was
+                   detected (every 50 invalid frames). */
+                if (++invalid_frame_count >= 50) {
+                    invalid_frame_count = 0;
+                    drv_uart_send_angle(0, 0);
+                }
             }
         }
         vTaskDelay(pdMS_TO_TICKS(20));
