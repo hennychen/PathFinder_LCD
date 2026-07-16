@@ -37,9 +37,11 @@
 #define SERVO_MAX_ANGLE             180
 
 /* ======================== UART 板间通信 ======================== */
+/* NOTE: GPIO33-37 被 Octal PSRAM 占用, 不可用。
+   暂用 GPIO19/20 (USB-JTAG引脚, 已切到UART0控制台后释放)。 */
 #define UART_PORT_NUM               UART_NUM_1
-#define UART_TX_GPIO                GPIO_NUM_43
-#define UART_RX_GPIO                GPIO_NUM_44
+#define UART_TX_GPIO                GPIO_NUM_19
+#define UART_RX_GPIO                GPIO_NUM_20
 #define UART_BAUD_RATE              115200
 #define UART_BUF_SIZE               256
 

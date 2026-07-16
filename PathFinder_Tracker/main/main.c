@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
 #include "tracker_config.h"
 #include "drv_es7210.h"
 #include "drv_ws2812.h"
@@ -14,12 +15,31 @@
 static const char *TAG = "tracker_main";
 static tracker_ctx_t s_tracker_ctx;
 
+/* Pull PA_EN high at the very start so the AcousticEye board (ES7210 +
+   WS2812 + audio circuitry) is powered before any peripheral init. */
+static void board_power_enable(void)
+{
+    gpio_config_t cfg = {
+        .pin_bit_mask = (1ULL << PA_EN_GPIO),
+        .mode         = GPIO_MODE_OUTPUT,
+        .pull_up_en   = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&cfg);
+    gpio_set_level(PA_EN_GPIO, 1);
+    vTaskDelay(pdMS_TO_TICKS(100));  /* let power rails stabilise */
+    printf("[%s] PA_EN HIGH on GPIO%d\n", TAG, PA_EN_GPIO);
+}
+
 void app_main(void)
 {
     printf("[%s] PathFinder_Tracker Phase 3 starting\n", TAG);
 
-    /* WS2812 LED ring – initialise before ES7210 so visual feedback is
-       available as soon as audio processing begins. */
+    /* ---- 0. Power up AcousticEye board FIRST ---- */
+    board_power_enable();
+
+    /* WS2812 LED ring */
     esp_err_t ret = drv_ws2812_init();
     if (ret != ESP_OK) {
         printf("[%s] WS2812 init FAILED: %s\n", TAG, esp_err_to_name(ret));

@@ -45,24 +45,9 @@ esp_err_t drv_es7210_init(void)
 
     esp_err_t err;
 
-    /* ---- 1. PA_EN: enable on-board audio circuit (must precede I2C) ---- */
-    gpio_config_t pa_en_cfg = {
-        .pin_bit_mask = (1ULL << PA_EN_GPIO),
-        .mode         = GPIO_MODE_OUTPUT,
-        .pull_up_en   = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type    = GPIO_INTR_DISABLE,
-    };
-    err = gpio_config(&pa_en_cfg);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "PA_EN gpio_config failed: %s", esp_err_to_name(err));
-        return err;
-    }
-    gpio_set_level(PA_EN_GPIO, 1);  /* Enable audio circuitry */
-    vTaskDelay(pdMS_TO_TICKS(50));  /* Wait for power to stabilise */
-    ESP_LOGI(TAG, "PA_EN pulled HIGH on GPIO%d", PA_EN_GPIO);
+    /* PA_EN already pulled HIGH in app_main() board_power_enable(). */
 
-    /* ---- 2. I2C master bus ---- */
+    /* ---- I2C master bus ---- */
     i2c_master_bus_config_t bus_cfg = {
         .i2c_port               = ES7210_I2C_PORT,
         .sda_io_num             = ES7210_I2C_SDA_GPIO,
