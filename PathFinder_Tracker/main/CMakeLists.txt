@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "main.c"
         "drivers/drv_es7210.c"
+        "drivers/drv_servo.c"
         "drivers/drv_ws2812.c"
         "audio/sound_localizer.c"
     INCLUDE_DIRS
