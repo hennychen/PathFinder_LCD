@@ -25,7 +25,7 @@ static const char *TAG = "vision_task";
 #define VISION_TASK_STACK      16384
 #define VISION_TASK_PRIORITY   4
 #define VISION_TASK_CORE       1
-#define VISION_QUEUE_LEN       2
+#define VISION_QUEUE_LEN       1   /* Overwrite mode: always read latest */
 
 /* ---- Timing ---- */
 #define FPS_LOG_INTERVAL_US    (5ULL * 1000ULL * 1000ULL)   /* 5 s   */
@@ -172,7 +172,8 @@ bool vision_get_latest(vision_msg_t *msg)
     if (msg == NULL || s_vision_queue == NULL) {
         return false;
     }
-    /* Non-blocking peek: reads without removing, so every consumer sees
-       the latest value until the producer overwrites it. */
-    return (xQueuePeek(s_vision_queue, msg, 0) == pdTRUE);
+    /* Consuming read: each vision frame is processed exactly once by the
+       state machine, preventing PID over-sampling at the 200 Hz audio
+       loop rate.  When the queue is empty, returns false immediately. */
+    return (xQueueReceive(s_vision_queue, msg, 0) == pdTRUE);
 }
