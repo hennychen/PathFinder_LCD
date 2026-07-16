@@ -1,6 +1,8 @@
 idf_component_register(
     SRCS
         "main.c"
+        "drivers/drv_es7210.c"
+        "audio/sound_localizer.c"
     INCLUDE_DIRS
         "."
         "drivers"
@@ -14,4 +16,5 @@ idf_component_register(
         esp_driver_ledc
         esp_timer
         nvs_flash
+        es7210
 )
