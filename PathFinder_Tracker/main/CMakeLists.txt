@@ -9,6 +9,8 @@ idf_component_register(
         "audio/sound_localizer.c"
         "vision/drv_ov2640.c"
         "vision/face_detector.cpp"
+        "vision/face_tracker.c"
+        "vision/vision_task.c"
     INCLUDE_DIRS
         "."
         "drivers"

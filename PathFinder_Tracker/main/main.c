@@ -9,6 +9,7 @@
 #include "drv_ov2640.h"
 #include "sound_localizer.h"
 #include "tracker_state_machine.h"
+#include "vision_task.h"
 
 static const char *TAG = "tracker_main";
 static tracker_ctx_t s_tracker_ctx;
@@ -45,6 +46,13 @@ void app_main(void)
     ret = drv_ov2640_init();
     if (ret != ESP_OK) {
         printf("[%s] Camera init FAILED (non-fatal): %s\n", TAG, esp_err_to_name(ret));
+    }
+
+    /* Launch the Core-1 vision task (face detection + queue publisher).
+       Runs independently of the audio loop on Core 0. */
+    ret = vision_task_init();
+    if (ret != ESP_OK) {
+        printf("[%s] Vision task init FAILED (non-fatal): %s\n", TAG, esp_err_to_name(ret));
     }
 
     ret = drv_es7210_init();
