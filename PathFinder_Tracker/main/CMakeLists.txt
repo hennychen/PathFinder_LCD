@@ -7,11 +7,13 @@ idf_component_register(
         "drivers/drv_ws2812.c"
         "drivers/drv_uart_comm.c"
         "audio/sound_localizer.c"
+        "vision/drv_ov2640.c"
     INCLUDE_DIRS
         "."
         "drivers"
         "audio"
         "comm"
+        "vision"
     REQUIRES
         esp_driver_gpio
         esp_driver_i2c

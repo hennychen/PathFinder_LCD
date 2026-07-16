@@ -6,6 +6,7 @@
 #include "drv_ws2812.h"
 #include "drv_servo.h"
 #include "drv_uart_comm.h"
+#include "drv_ov2640.h"
 #include "sound_localizer.h"
 #include "tracker_state_machine.h"
 
@@ -14,7 +15,7 @@ static tracker_ctx_t s_tracker_ctx;
 
 void app_main(void)
 {
-    printf("[%s] PathFinder_Tracker Phase 1-2 starting\n", TAG);
+    printf("[%s] PathFinder_Tracker Phase 3 starting\n", TAG);
 
     /* WS2812 LED ring – initialise before ES7210 so visual feedback is
        available as soon as audio processing begins. */
@@ -38,6 +39,12 @@ void app_main(void)
     if (ret != ESP_OK) {
         printf("[%s] UART comm init FAILED: %s\n", TAG, esp_err_to_name(ret));
         /* Non-fatal: continue without inter-board communication. */
+    }
+
+    /* OV2640 camera — initialise before ES7210 */
+    ret = drv_ov2640_init();
+    if (ret != ESP_OK) {
+        printf("[%s] Camera init FAILED (non-fatal): %s\n", TAG, esp_err_to_name(ret));
     }
 
     ret = drv_es7210_init();
