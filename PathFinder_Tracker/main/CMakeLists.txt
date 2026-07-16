@@ -8,6 +8,7 @@ idf_component_register(
         "drivers/drv_uart_comm.c"
         "audio/sound_localizer.c"
         "vision/drv_ov2640.c"
+        "vision/face_detector.cpp"
     INCLUDE_DIRS
         "."
         "drivers"
