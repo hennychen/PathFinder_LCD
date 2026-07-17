@@ -23,11 +23,11 @@ static const char *TAG = "drv_es7210";
 /* ---- ES7210 codec configuration constants ---- */
 #define ES7210_MCLK_MULTIPLE    256
 #define ES7210_MIC_BIAS_CFG     ES7210_MIC_BIAS_2V87
-#define ES7210_MIC_GAIN_CFG     ES7210_MIC_GAIN_37_5DB
+#define ES7210_MIC_GAIN_CFG     ES7210_MIC_GAIN_30DB
 #define ES7210_ADC_VOLUME_DB    0
 
-/* 24-bit normalisation: 2^23 */
-#define NORM_FACTOR_24BIT       8388608.0f
+/* 16-bit normalisation: 2^15 (matches original AcousticEye) */
+#define NORM_FACTOR_16BIT       32768.0f
 
 /* ---- Module state ---- */
 static i2c_master_bus_handle_t s_i2c_bus  = NULL;
@@ -116,7 +116,7 @@ esp_err_t drv_es7210_init(void)
     i2s_tdm_config_t tdm_cfg = {
         .clk_cfg = I2S_TDM_CLK_DEFAULT_CONFIG(ES7210_SAMPLE_RATE),
         .slot_cfg = I2S_TDM_PHILIPS_SLOT_DEFAULT_CONFIG(
-            I2S_DATA_BIT_WIDTH_32BIT,
+            I2S_DATA_BIT_WIDTH_16BIT,
             I2S_SLOT_MODE_STEREO,
             I2S_TDM_SLOT0 | I2S_TDM_SLOT1 | I2S_TDM_SLOT2 | I2S_TDM_SLOT3),
         .gpio_cfg = {
@@ -133,11 +133,11 @@ esp_err_t drv_es7210_init(void)
         },
     };
 
-    /* 24-bit audio in 32-bit TDM slots */
+    /* 16-bit audio in 16-bit TDM slots (matches original AcousticEye) */
     tdm_cfg.clk_cfg.mclk_multiple        = I2S_MCLK_MULTIPLE_256;
     tdm_cfg.slot_cfg.total_slot          = 4;
-    tdm_cfg.slot_cfg.data_bit_width      = I2S_DATA_BIT_WIDTH_32BIT;
-    tdm_cfg.slot_cfg.slot_bit_width      = I2S_SLOT_BIT_WIDTH_32BIT;
+    tdm_cfg.slot_cfg.data_bit_width      = I2S_DATA_BIT_WIDTH_16BIT;
+    tdm_cfg.slot_cfg.slot_bit_width      = I2S_SLOT_BIT_WIDTH_16BIT;
 
     err = i2s_channel_init_tdm_mode(s_rx_chan, &tdm_cfg);
     if (err != ESP_OK) {
@@ -164,10 +164,10 @@ esp_err_t drv_es7210_read(float data_out[ES7210_CHANNELS][ES7210_SAMPLE_SIZE])
     }
 
     /*
-     * Each I2S frame contains 4 TDM slots x 4 bytes (32-bit) = 16 bytes.
-     * 256 frames => 4096 bytes = 1024 int32_t words.
+     * Each I2S frame contains 4 TDM slots x 2 bytes (16-bit) = 8 bytes.
+     * 256 frames => 2048 bytes = 1024 int16_t words.
      */
-    static int32_t raw_buf[ES7210_CHANNELS * ES7210_SAMPLE_SIZE];
+    static int16_t raw_buf[ES7210_CHANNELS * ES7210_SAMPLE_SIZE];
     size_t  bytes_read = 0;
 
     esp_err_t err = i2s_channel_read(s_rx_chan,
@@ -187,17 +187,12 @@ esp_err_t drv_es7210_read(float data_out[ES7210_CHANNELS][ES7210_SAMPLE_SIZE])
     }
 
     /*
-     * De-interleave and normalise.
-     *
-     * ES7210 outputs 24-bit audio MSB-first in each 32-bit TDM slot,
-     * so the sample occupies bits [31:8].  Arithmetic right-shift by 8
-     * preserves the sign; division by 2^23 maps to [-1, 1).
+     * De-interleave and normalise to [-1, 1).
+     * I2S driver truncates 24-bit ES7210 data to 16-bit per slot.
      */
     for (int i = 0; i < ES7210_SAMPLE_SIZE; i++) {
         for (int ch = 0; ch < ES7210_CHANNELS; ch++) {
-            int32_t raw       = raw_buf[i * ES7210_CHANNELS + ch];
-            int32_t sample24  = raw >> 8;          /* sign-extended 24-bit value */
-            data_out[ch][i]   = (float)sample24 / NORM_FACTOR_24BIT;
+            data_out[ch][i] = (float)raw_buf[i * ES7210_CHANNELS + ch] / NORM_FACTOR_16BIT;
         }
     }
 

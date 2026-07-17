@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
@@ -132,9 +133,29 @@ void app_main(void)
         /* Audio diagnostic every ~5 seconds */
         if (es7210_ok && ++audio_diag_counter >= 1000) {
             audio_diag_counter = 0;
-            printf("[%s] audio: ok=%lu fail=%lu state=%d\n",
-                   TAG, (unsigned long)audio_ok_count, (unsigned long)audio_fail_count,
-                   s_tracker_ctx.current_state);
+            /* Compute raw RMS for diagnostics */
+            float max_peak = 0.0f;
+            for (int ch = 0; ch < 4; ch++) {
+                float mean = 0.0f;
+                for (int i = 0; i < 256; i++) mean += mic_data[ch][i];
+                mean /= 256.0f;
+                float rms = 0.0f;
+                for (int i = 0; i < 256; i++) {
+                    float d = mic_data[ch][i] - mean;
+                    rms += d * d;
+                    float a = fabsf(mic_data[ch][i]);
+                    if (a > max_peak) max_peak = a;
+                }
+                rms = sqrtf(rms / 256.0f);
+                if (ch == 0) {
+                    float activity = (rms > 1e-5f) ? log10f(rms) : -5.0f;
+                    printf("[%s] rms[0]=%.5f act=%.2f peak=%.4f thr=%.1f state=%d\n",
+                           TAG, rms, activity, max_peak, -2.7f,
+                           s_tracker_ctx.current_state);
+                }
+            }
+            printf("[%s] audio: ok=%lu fail=%lu\n",
+                   TAG, (unsigned long)audio_ok_count, (unsigned long)audio_fail_count);
         }
 
         /* Check for new vision data (non-blocking).  We peek every ~5 ms
