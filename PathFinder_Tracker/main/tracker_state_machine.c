@@ -15,7 +15,7 @@
 #include "tracker_state_machine.h"
 #include "drv_servo.h"
 #include "drv_ws2812.h"
-#include "drv_uart_comm.h"
+#include "comm_link.h"
 #include "esp_log.h"
 
 static const char *TAG = "tracker_sm";
@@ -96,7 +96,7 @@ void tracker_sm_step(tracker_ctx_t *ctx, float sound_angle, bool valid)
             ctx->invalid_count    = 0;
             ctx->current_state    = TRACKER_STATE_ACOUSTIC_TRACK;
             ESP_LOGI(TAG, "IDLE -> ACOUSTIC_TRACK (angle=%.1f deg)", sound_angle);
-            drv_uart_send_state((uint8_t)TRACKER_STATE_ACOUSTIC_TRACK);
+            comm_link_send_state((uint8_t)TRACKER_STATE_ACOUSTIC_TRACK);
         }
         break;
     }
@@ -118,14 +118,14 @@ void tracker_sm_step(tracker_ctx_t *ctx, float sound_angle, bool valid)
             float target_pan = drv_servo_angle_from_sound(ctx->smoothed_angle);
             servo_slew_to(target_pan);
 
-            /* Forward smoothed angle to Board A. */
-            drv_uart_send_angle(ctx->smoothed_angle, 1);
+            /* Forward smoothed angle to Board A via best channel. */
+            comm_link_send_angle(ctx->smoothed_angle, 1);
         } else {
             if (++ctx->invalid_count >= MAX_INVALID_FRAMES) {
                 ctx->search_count  = 0;
                 ctx->current_state = TRACKER_STATE_SEARCH;
                 ESP_LOGI(TAG, "ACOUSTIC_TRACK -> SEARCH (signal lost)");
-                drv_uart_send_state((uint8_t)TRACKER_STATE_SEARCH);
+                comm_link_send_state((uint8_t)TRACKER_STATE_SEARCH);
             }
         }
         break;
@@ -148,7 +148,7 @@ void tracker_sm_step(tracker_ctx_t *ctx, float sound_angle, bool valid)
             ctx->invalid_count    = 0;
             ctx->current_state    = TRACKER_STATE_ACOUSTIC_TRACK;
             ESP_LOGI(TAG, "SEARCH -> ACOUSTIC_TRACK (re-acquired, angle=%.1f deg)", sound_angle);
-            drv_uart_send_state((uint8_t)TRACKER_STATE_ACOUSTIC_TRACK);
+            comm_link_send_state((uint8_t)TRACKER_STATE_ACOUSTIC_TRACK);
         } else if (ctx->search_count >= SEARCH_DURATION) {
             /* Give up – centre the servo and go idle. */
             drv_servo_set_angle(SERVO_PAN, 90.0f);
@@ -156,7 +156,7 @@ void tracker_sm_step(tracker_ctx_t *ctx, float sound_angle, bool valid)
             drv_ws2812_show();
             ctx->current_state = TRACKER_STATE_IDLE;
             ESP_LOGI(TAG, "SEARCH -> IDLE (search timeout)");
-            drv_uart_send_state((uint8_t)TRACKER_STATE_IDLE);
+            comm_link_send_state((uint8_t)TRACKER_STATE_IDLE);
         }
         break;
     }
@@ -206,7 +206,7 @@ void tracker_sm_step_vision(tracker_ctx_t *ctx, bool face_found,
                      prev == TRACKER_STATE_IDLE ? "IDLE" :
                      prev == TRACKER_STATE_ACOUSTIC_TRACK ? "ACOUSTIC" : "SEARCH",
                      w, h, cx, cy);
-            drv_uart_send_state((uint8_t)TRACKER_STATE_FACE_TRACK);
+            comm_link_send_state((uint8_t)TRACKER_STATE_FACE_TRACK);
             drv_ws2812_clear();
             drv_ws2812_show();
         }
@@ -229,7 +229,7 @@ void tracker_sm_step_vision(tracker_ctx_t *ctx, bool face_found,
                 ctx->invalid_count = 0;
                 ESP_LOGI(TAG, "FACE_TRACK -> ACOUSTIC_TRACK (face lost %d frames)",
                          FACE_LOST_MAX);
-                drv_uart_send_state((uint8_t)TRACKER_STATE_ACOUSTIC_TRACK);
+                comm_link_send_state((uint8_t)TRACKER_STATE_ACOUSTIC_TRACK);
             }
         }
         break;

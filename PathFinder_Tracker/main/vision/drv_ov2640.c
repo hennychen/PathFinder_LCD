@@ -2,6 +2,7 @@
 #include "tracker_config.h"
 #include "esp_camera.h"
 #include "esp_log.h"
+#include "driver/i2c_master.h"
 
 static const char *TAG = "drv_ov2640";
 
@@ -10,12 +11,33 @@ static camera_fb_t *s_last_fb = NULL;
 
 esp_err_t drv_ov2640_init(void)
 {
+    /* Pre-initialise I2C0 bus for SCCB so the camera does NOT grab I2C1
+       (which ES7210 needs).  esp_camera will detect the existing bus
+       when pin_sccb_sda == -1 and sccb_i2c_port == 0. */
+    i2c_master_bus_config_t i2c0_cfg = {
+        .i2c_port = I2C_NUM_0,
+        .sda_io_num = CAM_PIN_SIOD,
+        .scl_io_num = CAM_PIN_SIOC,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .intr_priority = 0,
+        .trans_queue_depth = 0,
+        .flags.enable_internal_pullup = true,
+    };
+    i2c_master_bus_handle_t bus0_handle = NULL;
+    esp_err_t bus_ret = i2c_new_master_bus(&i2c0_cfg, &bus0_handle);
+    if (bus_ret != ESP_OK && bus_ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "I2C0 pre-init: %s (continuing anyway)", esp_err_to_name(bus_ret));
+    } else {
+        ESP_LOGI(TAG, "I2C0 pre-initialised for SCCB (SDA=%d, SCL=%d)", CAM_PIN_SIOD, CAM_PIN_SIOC);
+    }
+
     camera_config_t cam_cfg = {
         .pin_pwdn     = CAM_PIN_PWDN,
         .pin_reset    = CAM_PIN_RESET,
         .pin_xclk     = CAM_PIN_XCLK,
-        .pin_sccb_sda = CAM_PIN_SIOD,
-        .pin_sccb_scl = CAM_PIN_SIOC,
+        .pin_sccb_sda = -1,   /* Use pre-configured I2C0 bus */
+        .pin_sccb_scl = -1,
 
         .pin_d7  = CAM_PIN_D7,
         .pin_d6  = CAM_PIN_D6,
@@ -42,6 +64,9 @@ esp_err_t drv_ov2640_init(void)
         .fb_count    = 2,
 
         .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
+
+        /* Use the pre-initialised I2C0 bus (not the default I2C1). */
+        .sccb_i2c_port = 0,
     };
 
     esp_err_t ret = esp_camera_init(&cam_cfg);

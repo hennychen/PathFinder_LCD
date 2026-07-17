@@ -38,13 +38,11 @@ static EventGroupHandle_t s_mesh_events = NULL;
 static void mesh_event_handler(void *arg, esp_event_base_t event_base,
                                 int32_t event_id, void *event_data)
 {
-    mesh_addr_t id = {0};
     static int  last_layer = 0;
 
     switch (event_id) {
     case MESH_EVENT_STARTED: {
-        esp_mesh_get_id(&id);
-        ESP_LOGI(TAG, "MESH_STARTED, id:"MACSTR"", MAC2STR(id.addr));
+        ESP_LOGI(TAG, "MESH_STARTED");
         s_state = MESH_LINK_CONNECTING;
         break;
     }
@@ -67,10 +65,19 @@ static void mesh_event_handler(void *arg, esp_event_base_t event_base,
         break;
     }
 
-    case MESH_EVENT_ROUTING_TABLE: {
-        mesh_event_routing_table_t *route_table =
-            (mesh_event_routing_table_t *)event_data;
-        ESP_LOGI(TAG, "MESH_ROUTING_TABLE: %d entries", route_table->rt_size);
+    case MESH_EVENT_ROUTING_TABLE_ADD: {
+        mesh_event_routing_table_change_t *route_table =
+            (mesh_event_routing_table_change_t *)event_data;
+        ESP_LOGI(TAG, "MESH_ROUTING_TABLE_ADD: +%d (total: %d)",
+                 route_table->rt_size_change, route_table->rt_size_new);
+        break;
+    }
+
+    case MESH_EVENT_ROUTING_TABLE_REMOVE: {
+        mesh_event_routing_table_change_t *route_table =
+            (mesh_event_routing_table_change_t *)event_data;
+        ESP_LOGI(TAG, "MESH_ROUTING_TABLE_REMOVE: -%d (total: %d)",
+                 route_table->rt_size_change, route_table->rt_size_new);
         break;
     }
 
@@ -85,7 +92,7 @@ static void mesh_event_handler(void *arg, esp_event_base_t event_base,
             /* If we're root, our own MAC is root; else parent's parent... is root.
                For a 2-layer mesh, parent IS root for child nodes. */
             if (esp_mesh_get_layer() == MESH_ROOT_LAYER) {
-                memcpy(s_root_mac, s_root_mac, 6); /* We are root */
+                esp_wifi_get_mac(WIFI_IF_STA, s_root_mac); /* We are root */
             } else {
                 /* Parent is root in a 2-layer mesh */
                 memcpy(s_root_mac, parent.addr, 6);
@@ -99,8 +106,8 @@ static void mesh_event_handler(void *arg, esp_event_base_t event_base,
     }
 
     case MESH_EVENT_PARENT_DISCONNECTED: {
-        mesh_event_disconnect_t *disconnected =
-            (mesh_event_disconnect_t *)event_data;
+        mesh_event_disconnected_t *disconnected =
+            (mesh_event_disconnected_t *)event_data;
         ESP_LOGW(TAG, "MESH_PARENT_DISCONNECTED, reason:%d",
                  disconnected->reason);
         s_state = MESH_LINK_DISCONNECTED;
@@ -136,7 +143,9 @@ static void mesh_event_handler(void *arg, esp_event_base_t event_base,
         mesh_event_root_address_t *root_addr =
             (mesh_event_root_address_t *)event_data;
         memcpy(s_root_mac, root_addr->addr, 6);
-        ESP_LOGI(TAG, "MESH_ROOT_ADDRESS: "MACSTR, MAC2STR(s_root_mac));
+        ESP_LOGI(TAG, "MESH_ROOT_ADDRESS: %02x:%02x:%02x:%02x:%02x:%02x",
+                 s_root_mac[0], s_root_mac[1], s_root_mac[2],
+                 s_root_mac[3], s_root_mac[4], s_root_mac[5]);
         break;
     }
 
@@ -188,8 +197,7 @@ static void mesh_rx_task(void *arg)
 
         esp_err_t err = esp_mesh_recv(&from, &data, portMAX_DELAY, &flag, NULL, 0);
         if (err == ESP_OK && data.size > 0) {
-            ESP_LOGD(TAG, "Mesh RX: %d bytes from "MACSTR,
-                     data.size, MAC2STR(from.addr));
+            ESP_LOGD(TAG, "Mesh RX: %d bytes", data.size);
 
             if (s_rx_cb) {
                 s_rx_cb(from.addr, data.data, data.size);

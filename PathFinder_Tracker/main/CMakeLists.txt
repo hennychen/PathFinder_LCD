@@ -14,6 +14,7 @@ idf_component_register(
         "comm/mesh_protocol.c"
         "comm/mesh_espnow.c"
         "comm/mesh_node.c"
+        "comm/comm_link.c"
     INCLUDE_DIRS
         "."
         "drivers"
@@ -31,8 +32,6 @@ idf_component_register(
         es7210
         led_strip
         esp_wifi
-        esp_now
-        esp_mesh
         esp_netif
         esp_event
 )

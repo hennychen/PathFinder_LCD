@@ -25,12 +25,10 @@ static uint8_t s_local_mac[6] = {0};
 static uint8_t s_send_seq = 0;
 
 /* ── ESP-NOW send callback ── */
-static void espnow_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
+static void espnow_send_cb(const esp_now_send_info_t *tx_info, esp_now_send_status_t status)
 {
     if (status != ESP_NOW_SEND_SUCCESS) {
-        ESP_LOGD(TAG, "Send to %02x:%02x:%02x:%02x:%02x:%02x failed",
-                 mac_addr[0], mac_addr[1], mac_addr[2],
-                 mac_addr[3], mac_addr[4], mac_addr[5]);
+        ESP_LOGD(TAG, "ESP-NOW send failed");
     }
 }
 
@@ -62,7 +60,7 @@ esp_err_t mesh_espnow_init(void)
     }
 
     /* Get local MAC */
-    esp_wifi_get_mac(ESP_IF_WIFI_AP, s_local_mac);
+    esp_wifi_get_mac(WIFI_IF_AP, s_local_mac);
     ESP_LOGI(TAG, "Local MAC: %02x:%02x:%02x:%02x:%02x:%02x",
              s_local_mac[0], s_local_mac[1], s_local_mac[2],
              s_local_mac[3], s_local_mac[4], s_local_mac[5]);
@@ -121,7 +119,7 @@ esp_err_t mesh_espnow_add_peer(const uint8_t *mac)
     esp_now_peer_info_t peer;
     memset(&peer, 0, sizeof(esp_now_peer_info_t));
     peer.channel = 0;  /* 0 = current Wi-Fi channel */
-    peer.ifidx = ESP_IF_WIFI_AP;
+    peer.ifidx = WIFI_IF_AP;
     peer.encrypt = false;
     memcpy(peer.peer_addr, mac, 6);
 
