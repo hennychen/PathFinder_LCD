@@ -74,7 +74,7 @@ class EmoteScreen extends ConsumerWidget {
                         ),
                         child: Column(
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.face,
                               size: 80,
                               color: AppColors.warning,

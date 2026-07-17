@@ -58,7 +58,7 @@ esp_err_t drv_ov2640_init(void)
         .ledc_channel = LEDC_CHANNEL_2,
 
         .pixel_format  = PIXFORMAT_RGB565,
-        .frame_size    = FRAMESIZE_240X240,
+        .frame_size    = FRAMESIZE_QVGA,
 
         .fb_location = CAMERA_FB_IN_PSRAM,
         .fb_count    = 2,

@@ -13,6 +13,7 @@
 #include "sound_localizer.h"
 #include "tracker_state_machine.h"
 #include "vision_task.h"
+#include "web_viewer.h"
 #include "mesh_node.h"
 #include "mesh_espnow.h"
 #include "comm_link.h"
@@ -91,6 +92,12 @@ void app_main(void)
     ret = vision_task_init();
     if (ret != ESP_OK) {
         printf("[%s] Vision task init FAILED (non-fatal): %s\n", TAG, esp_err_to_name(ret));
+    }
+
+    /* Start web viewer (WiFi AP + HTTP server for camera preview) */
+    ret = web_viewer_start();
+    if (ret != ESP_OK) {
+        printf("[%s] Web viewer start FAILED (non-fatal): %s\n", TAG, esp_err_to_name(ret));
     }
 
     ret = drv_es7210_init();

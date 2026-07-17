@@ -39,7 +39,7 @@ class _EnvLineChartState extends ConsumerState<EnvLineChart> {
                   show: true,
                   drawVerticalLine: false,
                   getDrawingHorizontalLine: (v) =>
-                      FlLine(color: AppColors.divider, strokeWidth: 0.5),
+                      const FlLine(color: AppColors.divider, strokeWidth: 0.5),
                 ),
                 titlesData: FlTitlesData(
                   leftTitles: AxisTitles(
@@ -98,7 +98,7 @@ class _EnvLineChartState extends ConsumerState<EnvLineChart> {
                     ),
                   ),
                 ],
-                lineTouchData: LineTouchData(enabled: true),
+                lineTouchData: const LineTouchData(enabled: true),
               ),
             ),
     );

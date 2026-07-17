@@ -74,4 +74,16 @@ void wifi_config_manager_register_cb(wifi_prov_state_cb_t cb);
  */
 esp_err_t wifi_config_manager_skip_provisioning(void);
 
+/**
+ * @brief 获取已存储的路由器 SSID（供 Mesh 根节点读取）
+ * @return SSID 字符串指针，未配网时返回空字符串
+ */
+const char *wifi_config_manager_get_router_ssid(void);
+
+/**
+ * @brief 获取已存储的路由器密码（供 Mesh 根节点读取）
+ * @return 密码字符串指针，未配网时返回空字符串
+ */
+const char *wifi_config_manager_get_router_pass(void);
+
 #endif /* WIFI_CONFIG_MANAGER_H */

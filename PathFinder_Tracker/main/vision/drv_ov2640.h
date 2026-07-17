@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define FACE_IMG_WIDTH   240
+#define FACE_IMG_WIDTH   320
 #define FACE_IMG_HEIGHT  240
 
 typedef struct {

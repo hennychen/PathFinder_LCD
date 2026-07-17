@@ -11,6 +11,7 @@ idf_component_register(
         "vision/face_detector.cpp"
         "vision/face_tracker.c"
         "vision/vision_task.c"
+        "vision/web_viewer.c"
         "comm/mesh_protocol.c"
         "comm/mesh_espnow.c"
         "comm/mesh_node.c"
@@ -34,4 +35,5 @@ idf_component_register(
         esp_wifi
         esp_netif
         esp_event
+        esp_http_server
 )

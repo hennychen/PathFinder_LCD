@@ -60,7 +60,7 @@ class BleWifiWriter {
       bool isFirst = true;
 
       while (offset < bytes.length) {
-        final chunkSize = mtu - 1;
+        const chunkSize = mtu - 1;
         final remaining = bytes.length - offset;
         final copyLen = remaining < chunkSize ? remaining : chunkSize;
 

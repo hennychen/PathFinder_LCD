@@ -6,7 +6,7 @@ part 'dao_env.g.dart';
 
 @DriftAccessor(tables: [EnvRecords])
 class EnvDao extends DatabaseAccessor<AppDatabase> with _$EnvDaoMixin {
-  EnvDao(AppDatabase db) : super(db);
+  EnvDao(super.db);
 
   Future<void> insertEnv(
     DateTime timestamp,

@@ -6,7 +6,7 @@ part 'dao_emote.g.dart';
 
 @DriftAccessor(tables: [EmoteRecords])
 class EmoteDao extends DatabaseAccessor<AppDatabase> with _$EmoteDaoMixin {
-  EmoteDao(AppDatabase db) : super(db);
+  EmoteDao(super.db);
 
   Future<void> insertEmote(DateTime timestamp, int emoteId,
       String friendlyName, int triggerCode, String triggerLabel,

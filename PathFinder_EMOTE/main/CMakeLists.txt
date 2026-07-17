@@ -15,9 +15,13 @@ idf_component_register(
         "web_portal.c"
         "provision_screen.c"
         "flight_instruments.c"
+        "mesh_common/mesh_protocol.c"
+        "mesh_espnow.c"
+        "mesh_node.c"
     INCLUDE_DIRS
         "."
         "drivers"
+        "mesh_common"
     REQUIRES
         esp_driver_gpio
         esp_driver_i2c

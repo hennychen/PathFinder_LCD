@@ -38,8 +38,19 @@
 #include "provision_screen.h"
 #include "flight_instruments.h"
 #include "cJSON.h"
+#include "mesh_node.h"
+#include "mesh_espnow.h"
+#include "mesh_protocol.h"
 
 static const char *TAG = "emote";
+
+/* ===================== Mesh 追踪数据存储 ===================== */
+static float    s_tracker_angle = 0.0f;     /* B板声源追踪角度 */
+static uint8_t  s_tracker_valid = 0;        /* 角度有效标志 */
+static uint8_t  s_tracker_state = 0;        /* B板状态机状态 */
+static uint8_t  s_child_mac[6] = {0};       /* B板 MAC 地址 */
+static int64_t  s_last_heartbeat_us = 0;    /* 上次心跳时间 */
+static bool     s_mesh_root_started = false;
 
 /* ===================== LCD 引脚配置 ===================== */
 #define LCD_H_RES              480
@@ -1040,6 +1051,68 @@ static void click_cb(lv_event_t *e)
     flight_instruments_show();
 }
 
+/* ===================== ESP-NOW / Mesh 接收回调 ===================== */
+
+/* 处理收到的追踪消息 (来自 B板) */
+static void handle_tracker_msg(const uint8_t *src_mac, const uint8_t *raw, int raw_len)
+{
+    mesh_msg_t msg;
+    if (!mesh_msg_parse(raw, raw_len, &msg)) {
+        return;  /* CRC 失败 */
+    }
+
+    /* 记录来源 MAC */
+    if (src_mac) {
+        memcpy(s_child_mac, src_mac, 6);
+    }
+
+    switch (msg.msg_type) {
+    case MSG_ANGLE_DATA:
+        if (msg.payload_len >= 3) {
+            uint16_t angle_fixed = (uint16_t)(msg.payload[0] | (msg.payload[1] << 8));
+            s_tracker_angle = angle_fixed / 10.0f;
+            s_tracker_valid = msg.payload[2];
+        }
+        break;
+
+    case MSG_TRACK_STATE:
+        if (msg.payload_len >= 1) {
+            s_tracker_state = msg.payload[0];
+        }
+        break;
+
+    case MSG_FACE_INFO:
+        /* 人脸信息暂时仅记录,后续可更新 UI */
+        break;
+
+    case MSG_HEARTBEAT:
+        s_last_heartbeat_us = esp_timer_get_time();
+        break;
+
+    case MSG_MESH_READY:
+        ESP_LOGI(TAG, "B板 Mesh Ready from %02x:%02x:%02x:%02x:%02x:%02x",
+                 src_mac[0], src_mac[1], src_mac[2],
+                 src_mac[3], src_mac[4], src_mac[5]);
+        s_last_heartbeat_us = esp_timer_get_time();
+        break;
+
+    default:
+        break;
+    }
+}
+
+/* ESP-NOW 接收回调 (在 WiFi 任务上下文中运行) */
+static void on_espnow_rx(const uint8_t *src_mac, const uint8_t *data, int data_len)
+{
+    handle_tracker_msg(src_mac, data, data_len);
+}
+
+/* Mesh P2P 接收回调 (在 mesh_rx_task 中运行) */
+static void on_mesh_rx(const uint8_t *from_mac, const uint8_t *data, int data_len)
+{
+    handle_tracker_msg(from_mac, data, data_len);
+}
+
 /* ===================== Wi-Fi 配网状态同步 ===================== */
 static void on_wifi_prov_state(wifi_prov_state_t state, const char *ssid, const char *detail)
 {
@@ -1064,6 +1137,28 @@ static void on_wifi_prov_state(wifi_prov_state_t state, const char *ssid, const 
         if (lvgl_lock(100)) {
             provision_screen_destroy();
             lvgl_unlock();
+        }
+
+        /* 配网成功 → 启动 Mesh ROOT 节点 */
+        if (!s_mesh_root_started) {
+            const char *r_ssid = wifi_config_manager_get_router_ssid();
+            const char *r_pass = wifi_config_manager_get_router_pass();
+
+            ESP_LOGI(TAG, "WiFi 已连接，启动 Mesh ROOT (router='%s')", r_ssid);
+
+            esp_err_t mesh_ret = mesh_node_start_root_after_wifi(r_ssid, r_pass);
+            if (mesh_ret != ESP_OK) {
+                ESP_LOGE(TAG, "Mesh ROOT 启动失败: %s", esp_err_to_name(mesh_ret));
+            } else {
+                s_mesh_root_started = true;
+            }
+
+            /* ESP-NOW 初始化 (在 Mesh/WiFi 启动后) */
+            mesh_espnow_init();
+            mesh_espnow_register_rx_cb(on_espnow_rx);
+
+            /* 注册 Mesh P2P 接收回调 */
+            mesh_node_register_rx_cb(on_mesh_rx);
         }
         break;
 

@@ -19,7 +19,7 @@ class DeviceTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: ListTile(
         onTap: onTap,
-        leading: Icon(Icons.bluetooth, color: AppColors.envPrimary),
+        leading: const Icon(Icons.bluetooth, color: AppColors.envPrimary),
         title: Text(
           name,
           style: const TextStyle(

@@ -6,7 +6,7 @@ part 'dao_event.g.dart';
 
 @DriftAccessor(tables: [EventRecords])
 class EventDao extends DatabaseAccessor<AppDatabase> with _$EventDaoMixin {
-  EventDao(AppDatabase db) : super(db);
+  EventDao(super.db);
 
   Future<void> insertEvent(
     DateTime timestamp,

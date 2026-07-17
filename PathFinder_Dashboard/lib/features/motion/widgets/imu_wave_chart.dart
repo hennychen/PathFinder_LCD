@@ -41,8 +41,8 @@ class _ImuWaveChartState extends ConsumerState<ImuWaveChart> {
         height: 150,
         child: LineChart(
           LineChartData(
-            gridData: FlGridData(show: false),
-            titlesData: FlTitlesData(show: false),
+            gridData: const FlGridData(show: false),
+            titlesData: const FlTitlesData(show: false),
             borderData: FlBorderData(show: false),
             lineBarsData: [
               // Pitch — 运动胶囊绿色

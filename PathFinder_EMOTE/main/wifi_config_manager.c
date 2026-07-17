@@ -358,3 +358,13 @@ esp_err_t wifi_config_manager_skip_provisioning(void)
     s_state = WIFI_PROV_STATE_IDLE;
     return ESP_OK;
 }
+
+const char *wifi_config_manager_get_router_ssid(void)
+{
+    return s_ssid;
+}
+
+const char *wifi_config_manager_get_router_pass(void)
+{
+    return s_pass;
+}
