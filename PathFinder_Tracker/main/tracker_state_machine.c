@@ -17,6 +17,7 @@
 #include "drv_ws2812.h"
 #include "comm_link.h"
 #include "esp_log.h"
+#include <math.h>
 
 static const char *TAG = "tracker_sm";
 
@@ -26,6 +27,8 @@ static const char *TAG = "tracker_sm";
 #define SEARCH_DURATION       250     /* ~5 s in SEARCH → IDLE                */
 #define SERVO_STEP_MAX        3.0f    /* Max deg/frame to reduce servo jitter */
 #define FACE_LOST_MAX         15      /* Frames before face→acoustic fallback  */
+#define TILT_SCAN_AMPLITUDE   30.0f   /* ±30° scan range around center        */
+#define TILT_SCAN_PERIOD      200     /* Frames for full sweep (≈4 s)          */
 
 /* WS2812 indication colours (GRB) */
 #define LED_FACE_COLOR        0x0000FF  /* Green when face-tracking   */
@@ -118,6 +121,14 @@ void tracker_sm_step(tracker_ctx_t *ctx, float sound_angle, bool valid)
             float target_pan = drv_servo_angle_from_sound(ctx->smoothed_angle);
             servo_slew_to(target_pan);
 
+            /* Centre tilt during acoustic tracking (no elevation data
+               from sound source localisation). */
+            float cur_tilt = drv_servo_get_angle(SERVO_TILT);
+            float tilt_delta = 90.0f - cur_tilt;
+            if (tilt_delta >  SERVO_STEP_MAX) tilt_delta =  SERVO_STEP_MAX;
+            if (tilt_delta < -SERVO_STEP_MAX) tilt_delta = -SERVO_STEP_MAX;
+            drv_servo_set_angle(SERVO_TILT, cur_tilt + tilt_delta);
+
             /* Forward smoothed angle to Board A via best channel. */
             comm_link_send_angle(ctx->smoothed_angle, 1);
         } else {
@@ -140,6 +151,15 @@ void tracker_sm_step(tracker_ctx_t *ctx, float sound_angle, bool valid)
         drv_ws2812_show_angle(ctx->last_valid_angle);
         float hold_pan = drv_servo_angle_from_sound(ctx->last_valid_angle);
         servo_slew_to(hold_pan);
+
+        /* Tilt scanning: sinusoidal sweep to search for faces/objects. */
+        float scan_phase = (float)ctx->search_count / (float)TILT_SCAN_PERIOD;
+        float target_tilt = 90.0f + TILT_SCAN_AMPLITUDE * sinf(scan_phase * 2.0f * 3.14159265f);
+        float cur_tilt = drv_servo_get_angle(SERVO_TILT);
+        float td = target_tilt - cur_tilt;
+        if (td >  SERVO_STEP_MAX) td =  SERVO_STEP_MAX;
+        if (td < -SERVO_STEP_MAX) td = -SERVO_STEP_MAX;
+        drv_servo_set_angle(SERVO_TILT, cur_tilt + td);
 
         if (valid) {
             /* Re-acquired – re-seed smoother and resume tracking. */

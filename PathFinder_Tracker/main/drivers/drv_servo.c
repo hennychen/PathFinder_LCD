@@ -150,22 +150,19 @@ float drv_servo_get_angle(servo_id_t id)
 
 float drv_servo_angle_from_sound(float sound_angle)
 {
-    /* Reject out-of-range inputs; hold the last commanded Pan angle. */
+    /* Reject invalid inputs. */
     if (sound_angle < 0.0f || sound_angle >= 360.0f) {
         return s_angle[SERVO_PAN];
     }
 
-    /* Signed relative angle: 0° = front, +ve = right, -ve = left. */
+    /* Convert to signed relative angle: 0° = front, +ve = right, -ve = left. */
     float rel = sound_angle;
-    if (rel > 180.0f) rel -= 360.0f;
+    if (rel > 180.0f) rel -= 360.0f;   /* now rel ∈ (-180, 180] */
 
-    /* Rear hemisphere cannot be resolved by the front-facing mic array,
-       so hold position instead of whipping around. */
-    if (rel > SERVO_TRACK_HALF_CONE || rel < -SERVO_TRACK_HALF_CONE) {
-        return s_angle[SERVO_PAN];
-    }
-
-    /* Map front(0)->90 (centre), right(+90)->0, left(-90)->180 */
+    /* Map: front(0°)->90°(centre), right(+90°)->0°, left(-90°)->180°
+       For rear hemisphere (|rel| > 90°), clamp at physical limit.
+       - +90°..+180° (rear-right) -> clamp to 0° (rightmost)
+       - -90°..-180° (rear-left)  -> clamp to 180° (leftmost)   */
     float pan = SERVO_CENTER_ANGLE - rel;
-    return clamp_angle(pan);
+    return clamp_angle(pan);   /* clamp_angle limits to [0°, 180°] */
 }

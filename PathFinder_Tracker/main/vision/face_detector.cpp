@@ -74,13 +74,26 @@ esp_err_t face_detector_detect(const camera_frame_t *frame, face_result_t *resul
     img.height   = static_cast<uint16_t>(frame->height);
     img.pix_type = dl::image::DL_IMAGE_PIX_TYPE_RGB565LE;
 
+    /* Diagnostic: check frame data is not all zeros */
+    uint16_t *pix = (uint16_t *)frame->data;
+    uint32_t non_zero = 0;
+    uint32_t sample_count = (frame->width * frame->height > 256) ? 256 : (frame->width * frame->height);
+    for (uint32_t i = 0; i < sample_count; i++) {
+        if (pix[i] != 0) non_zero++;
+    }
+
     /* Run inference and measure wall-clock time. */
     int64_t t0 = esp_timer_get_time();
     std::list<dl::detect::result_t> &detect_results = s_detector->run(img);
     int64_t t1 = esp_timer_get_time();
+    int64_t inf_us = t1 - t0;
 
-    result->inference_ms = static_cast<uint32_t>((t1 - t0) / 1000);
+    result->inference_ms = static_cast<uint32_t>(inf_us / 1000);
     result->count        = 0;
+
+    ESP_LOGI(TAG, "frame %dx%d fmt=%d nonzero=%u/%u inf=%lldus results=%zu",
+             frame->width, frame->height, frame->format,
+             non_zero, sample_count, inf_us, detect_results.size());
 
     /* Convert ESP-DL results → flat face_box_t array (capped at MAX_FACES). */
     for (const auto &res : detect_results) {
