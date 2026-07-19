@@ -16,7 +16,7 @@
 #include <math.h>
 #include <string.h>
 #include "esp_log.h"
-#include "esp_timer.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -52,6 +52,14 @@ static const char *TAG = "motion";
 #define DEBOUNCE_TURN     8       /* ~320ms = 8 帧 */
 #define DEBOUNCE_IDLE     25      /* 1s = 25 帧 */
 #define DEBOUNCE_HIGH_SPEED 75    /* 3s = 75 帧 */
+
+/* ── 校准参数 ── */
+#define CALIB_DEFAULT_FRAMES   75      /* 3秒 @25Hz */
+#define CALIB_WINDOW_SIZE      16      /* 静止检测滑动窗口 */
+#define CALIB_MAX_MOTION_VAR   0.3f    /* 静止检测阈值 (g²) */
+#define CALIB_NV_NAMESPACE     "sensor_calib"
+/* NVS keys: gyro_bx/by/bz + acc_bx/by/bz
+ * 存储精度: gyro=0.001°/s, accel=0.001g */
 
 /* ── 优先级表 (碰撞>刹车>加速>转弯>颠簸>坡度>行驶>静止) ── */
 static const int s_priority[MOTION_EVENT_COUNT] = {
@@ -109,6 +117,18 @@ static struct {
     int   high_speed_accum;   /* 连续 |a|>0.5g 的帧计数 */
 } s_state;
 
+/* ── 校准状态 ── */
+static struct {
+    motion_calib_state_t state;
+    int   target_frames;
+    int   collected_frames;
+    float gyro_sum[3];       /* 原始陀螺仪读数累加 */
+    float accel_sum[3];      /* 原始加速度读数累加 */
+    float accel_mag_window[CALIB_WINDOW_SIZE];  /* 静止检测窗口 */
+    int   window_idx;
+    int   window_n;
+} s_calib = { MOTION_CALIB_IDLE, 0, 0, {0}, {0}, {0}, 0, 0 };
+
 /* ── 辅助函数 ── */
 static float calc_variance(const float *data, int n, float mean)
 {
@@ -137,8 +157,157 @@ esp_err_t motion_engine_init(void)
     s_state.current_event = MOTION_IDLE;
     s_state.pending_event = MOTION_IDLE;
     s_state.filt_initialized = false;
+
+    /* 尝试从 NVS 加载历史 bias */
+    motion_engine_load_bias_from_nvs();
+
     ESP_LOGI(TAG, "运动分析引擎初始化完成 (25Hz, EMA α=%.2f)", FILTER_ALPHA);
     return ESP_OK;
+}
+
+/* ─────────────────────────────────────────────────────────
+ *  校准状态机 API
+ * ───────────────────────────────────────────────────────── */
+
+void motion_engine_start_calibration(int frames)
+{
+    if (frames < 10) frames = CALIB_DEFAULT_FRAMES;
+    if (frames > 300) frames = 300;
+
+    memset(&s_calib, 0, sizeof(s_calib));
+    s_calib.target_frames = frames;
+    s_calib.state = MOTION_CALIB_RUNNING;
+    ESP_LOGI(TAG, "IMU 校准启动 (%d 帧 ≈ %.1fs)", frames, frames * 0.04f);
+}
+
+motion_calib_state_t motion_engine_get_calib_state(void)
+{
+    return s_calib.state;
+}
+
+int motion_engine_get_calib_progress(void)
+{
+    if (s_calib.target_frames <= 0) return 0;
+    int pct = s_calib.collected_frames * 100 / s_calib.target_frames;
+    if (pct > 100) pct = 100;
+    return pct;
+}
+
+/* 计算 bias 写入 NVS（同步，在 motion_engine_process 内部调用） */
+static void motion_engine_save_bias_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(CALIB_NV_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
+        ESP_LOGW(TAG, "NVS 打开失败，bias 未持久化");
+        return;
+    }
+    /* 存储精度: 0.001 单位 (°/s 或 g) */
+    nvs_set_i32(h, "gyro_bx", (int32_t)(s_state.gyro_bias[0]  * 1000.0f));
+    nvs_set_i32(h, "gyro_by", (int32_t)(s_state.gyro_bias[1]  * 1000.0f));
+    nvs_set_i32(h, "gyro_bz", (int32_t)(s_state.gyro_bias[2]  * 1000.0f));
+    nvs_set_i32(h, "acc_bx",  (int32_t)(s_state.accel_bias[0] * 1000.0f));
+    nvs_set_i32(h, "acc_by",  (int32_t)(s_state.accel_bias[1] * 1000.0f));
+    nvs_set_i32(h, "acc_bz",  (int32_t)(s_state.accel_bias[2] * 1000.0f));
+    nvs_commit(h);
+    nvs_close(h);
+    ESP_LOGI(TAG, "bias 已写入 NVS: gyro=[%+.3f,%+.3f,%+.3f] °/s, accel=[%+.3f,%+.3f,%+.3f] g",
+             s_state.gyro_bias[0], s_state.gyro_bias[1], s_state.gyro_bias[2],
+             s_state.accel_bias[0], s_state.accel_bias[1], s_state.accel_bias[2]);
+}
+
+esp_err_t motion_engine_load_bias_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(CALIB_NV_NAMESPACE, NVS_READONLY, &h) != ESP_OK) {
+        ESP_LOGI(TAG, "无 NVS IMU bias 数据，使用默认零值");
+        return ESP_ERR_NVS_NOT_FOUND;
+    }
+    int32_t v = 0;
+    bool has_any = false;
+    if (nvs_get_i32(h, "gyro_bx", &v) == ESP_OK) { s_state.gyro_bias[0]  = v / 1000.0f; has_any = true; }
+    if (nvs_get_i32(h, "gyro_by", &v) == ESP_OK) { s_state.gyro_bias[1]  = v / 1000.0f; }
+    if (nvs_get_i32(h, "gyro_bz", &v) == ESP_OK) { s_state.gyro_bias[2]  = v / 1000.0f; }
+    if (nvs_get_i32(h, "acc_bx",  &v) == ESP_OK) { s_state.accel_bias[0] = v / 1000.0f; }
+    if (nvs_get_i32(h, "acc_by",  &v) == ESP_OK) { s_state.accel_bias[1] = v / 1000.0f; }
+    if (nvs_get_i32(h, "acc_bz",  &v) == ESP_OK) { s_state.accel_bias[2] = v / 1000.0f; }
+    nvs_close(h);
+    if (has_any) {
+        ESP_LOGI(TAG, "NVS bias 已加载: gyro=[%+.3f,%+.3f,%+.3f] °/s, accel=[%+.3f,%+.3f,%+.3f] g",
+                 s_state.gyro_bias[0], s_state.gyro_bias[1], s_state.gyro_bias[2],
+                 s_state.accel_bias[0], s_state.accel_bias[1], s_state.accel_bias[2]);
+        return ESP_OK;
+    }
+    return ESP_ERR_NVS_NOT_FOUND;
+}
+
+/* 校准算法：采集一帧数据并更新累加，到达目标后计算 bias */
+static void motion_engine_calib_feed(const mpu9250_data_t *imu)
+{
+    if (s_calib.state != MOTION_CALIB_RUNNING) return;
+
+    /* 累加原始读数 */
+    s_calib.gyro_sum[0]  += imu->gyro[0];
+    s_calib.gyro_sum[1]  += imu->gyro[1];
+    s_calib.gyro_sum[2]  += imu->gyro[2];
+    s_calib.accel_sum[0] += imu->accel[0];
+    s_calib.accel_sum[1] += imu->accel[1];
+    s_calib.accel_sum[2] += imu->accel[2];
+
+    /* 静止检测：滑动窗口方差 */
+    float mag = sqrtf(imu->accel[0] * imu->accel[0] +
+                      imu->accel[1] * imu->accel[1] +
+                      imu->accel[2] * imu->accel[2]);
+    s_calib.accel_mag_window[s_calib.window_idx] = fabsf(mag - 1.0f);
+    s_calib.window_idx = (s_calib.window_idx + 1) % CALIB_WINDOW_SIZE;
+    if (s_calib.window_n < CALIB_WINDOW_SIZE) s_calib.window_n++;
+
+    /* 窗口方差检测，若剧烈晃动 → FAILED */
+    if (s_calib.window_n >= 4) {
+        float mean = 0;
+        for (int i = 0; i < s_calib.window_n; i++)
+            mean += s_calib.accel_mag_window[i];
+        mean /= s_calib.window_n;
+        float var = 0;
+        for (int i = 0; i < s_calib.window_n; i++) {
+            float d = s_calib.accel_mag_window[i] - mean;
+            var += d * d;
+        }
+        var /= s_calib.window_n;
+        if (var > CALIB_MAX_MOTION_VAR) {
+            s_calib.state = MOTION_CALIB_FAILED;
+            ESP_LOGW(TAG, "校准失败: 检测到剧烈晃动 (var=%.3f)", var);
+            return;
+        }
+    }
+
+    s_calib.collected_frames++;
+    if (s_calib.collected_frames >= s_calib.target_frames) {
+        /* 计算均值 */
+        float gyro_mean[3], accel_mean[3];
+        for (int i = 0; i < 3; i++) {
+            gyro_mean[i]  = s_calib.gyro_sum[i]  / s_calib.target_frames;
+            accel_mean[i] = s_calib.accel_sum[i] / s_calib.target_frames;
+        }
+        /* 陀螺仪 bias = 静止时的输出值 */
+        s_state.gyro_bias[0] = gyro_mean[0];
+        s_state.gyro_bias[1] = gyro_mean[1];
+        s_state.gyro_bias[2] = gyro_mean[2];
+        /* 加速度 bias = 静止水平时除重力外的残余偏移 */
+        s_state.accel_bias[0] = accel_mean[0];      /* X 轴应为 0 */
+        s_state.accel_bias[1] = accel_mean[1];      /* Y 轴应为 0 */
+        s_state.accel_bias[2] = accel_mean[2] - 1.0f; /* Z 轴减去 1g */
+
+        s_calib.state = MOTION_CALIB_DONE;
+        ESP_LOGI(TAG, "IMU 校准完成: gyro=[%+.3f,%+.3f,%+.3f] °/s, accel=[%+.3f,%+.3f,%+.3f] g",
+                 s_state.gyro_bias[0], s_state.gyro_bias[1], s_state.gyro_bias[2],
+                 s_state.accel_bias[0], s_state.accel_bias[1], s_state.accel_bias[2]);
+
+        /* 持久化 */
+        motion_engine_save_bias_to_nvs();
+
+        /* 重置滤波器以便用新 bias 重新初始化 */
+        s_state.filt_initialized = false;
+    }
 }
 
 void motion_engine_get_angles(float *pitch_deg, float *roll_deg)
@@ -183,6 +352,12 @@ void motion_engine_calibrate(void)
 motion_event_t motion_engine_process(const mpu9250_data_t *imu)
 {
     if (imu == NULL) return s_state.current_event;
+
+    /* 校准模式：喂数据给校准状态机，不更新姿态 */
+    if (s_calib.state == MOTION_CALIB_RUNNING) {
+        motion_engine_calib_feed(imu);
+        return s_state.current_event;
+    }
 
     /* ── 1. 去零偏 ── */
     float raw_ax = imu->accel[0] - s_state.accel_bias[0];

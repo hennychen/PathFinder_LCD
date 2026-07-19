@@ -90,9 +90,20 @@ static float s_last_render_roll  = 999.0f;
 /* 俯仰刻度标签 (6 条刻度线 × 左右两侧 = 12 个标签) */
 static lv_obj_t *s_pitch_labels[6][2] = {NULL};
 
+/* 校准 UI 状态 */
+static lv_obj_t *s_calib_mbox     = NULL;   /* 模态确认对话框 */
+static lv_obj_t *s_calib_overlay  = NULL;   /* 半透明遮罩 + 进度环容器 */
+static lv_obj_t *s_calib_arc      = NULL;   /* 进度环 */
+static lv_obj_t *s_calib_hint_lbl = NULL;   /* 状态提示标签 */
+static int64_t   s_calib_done_at  = 0;      /* DONE/FAILED 时间戳 */
+
 /* ===================== 前向声明 ===================== */
 static void att_page_click_cb(lv_event_t *e);
 static void compass_face_update(int16_t heading);
+static void att_page_long_press_cb(lv_event_t *e);
+static void calib_mbox_cb(lv_event_t *e);
+static void create_calib_overlay(void);
+static void destroy_calib_overlay(void);
 
 /* ===================== 辅助函数 ===================== */
 
@@ -502,15 +513,16 @@ static void create_attitude_page(lv_obj_t *parent)
     lv_label_set_text(s_bar_label, "--");
     lv_obj_align(s_bar_label, LV_ALIGN_CENTER, -155, 72);
 
-    /* 点击退出回表情页 */
+    /* 点击退出回表情页，长按触发陀螺仪校准 */
     lv_obj_add_flag(s_page_att, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_page_att, att_page_click_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_page_att, att_page_long_press_cb, LV_EVENT_LONG_PRESSED, NULL);
 
     /* 底部提示标签 */
     lv_obj_t *hint = lv_label_create(s_page_att);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x666688), 0);
-    lv_label_set_text(hint, "tap: exit");
+    lv_label_set_text(hint, "tap: exit  |  hold: calib");
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -18);
 
     /* 默认可见 (第1页) */
@@ -519,11 +531,106 @@ static void create_attitude_page(lv_obj_t *parent)
 
 /* ===================== 事件回调 ===================== */
 
-/* 姿态页点击：退出回表情页 */
+/* 姿态页点击：退出回表情页（校准遮罩打开时禁止退出） */
 static void att_page_click_cb(lv_event_t *e)
 {
     (void)e;
+    if (s_calib_overlay || s_calib_mbox) return;
     flight_instruments_hide();
+}
+
+/* 姿态页长按：弹出校准确认对话框 */
+static void att_page_long_press_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_calib_mbox || s_calib_overlay) return;  /* 防重入 */
+
+    static const char *btns[] = {"Start", "Cancel", ""};
+    s_calib_mbox = lv_msgbox_create(NULL, "Gyro Calibration",
+                                     "Keep device level & still\nfor 3 seconds.",
+                                     btns, true);
+    if (s_calib_mbox) {
+        lv_obj_set_style_bg_color(s_calib_mbox, lv_color_hex(0x222233), 0);
+        lv_obj_set_style_bg_opa(s_calib_mbox, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(s_calib_mbox, 2, 0);
+        lv_obj_set_style_border_color(s_calib_mbox, lv_color_hex(0x00B4FF), 0);
+        lv_obj_set_style_radius(s_calib_mbox, 12, 0);
+        lv_obj_add_event_cb(s_calib_mbox, calib_mbox_cb, LV_EVENT_VALUE_CHANGED, NULL);
+        lv_obj_center(s_calib_mbox);
+    }
+}
+
+/* 校准对话框按钮回调 */
+static void calib_mbox_cb(lv_event_t *e)
+{
+    lv_obj_t *mbox = lv_event_get_current_target(e);
+    uint16_t idx = lv_msgbox_get_active_btn(mbox);
+
+    /* 删除对话框 */
+    if (s_calib_mbox) {
+        lv_obj_del(s_calib_mbox);
+        s_calib_mbox = NULL;
+    }
+
+    /* idx == 0: Start */
+    if (idx == 0) {
+        motion_engine_start_calibration(75);
+        create_calib_overlay();
+    }
+}
+
+/* 创建校准进度环遮罩 */
+static void create_calib_overlay(void)
+{
+    s_calib_overlay = lv_obj_create(s_page_att);
+    lv_obj_set_size(s_calib_overlay, 280, 280);
+    lv_obj_center(s_calib_overlay);
+    lv_obj_set_style_bg_opa(s_calib_overlay, LV_OPA_80, 0);
+    lv_obj_set_style_bg_color(s_calib_overlay, lv_color_black(), 0);
+    lv_obj_set_style_border_width(s_calib_overlay, 0, 0);
+    lv_obj_set_style_pad_all(s_calib_overlay, 0, 0);
+    lv_obj_set_style_radius(s_calib_overlay, 140, 0);
+    lv_obj_clear_flag(s_calib_overlay, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    /* 进度环 */
+    s_calib_arc = lv_arc_create(s_calib_overlay);
+    lv_obj_set_size(s_calib_arc, 200, 200);
+    lv_obj_center(s_calib_arc);
+    lv_arc_set_range(s_calib_arc, 0, 100);
+    lv_arc_set_value(s_calib_arc, 0);
+    lv_obj_clear_flag(s_calib_arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_width(s_calib_arc, 10, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(s_calib_arc, lv_color_hex(0x00B4FF), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(s_calib_arc, lv_color_hex(0x333344), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s_calib_arc, 10, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_calib_arc, LV_OPA_TRANSP, LV_PART_KNOB);
+
+    /* 中心标题标签 */
+    lv_obj_t *title = lv_label_create(s_calib_overlay);
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_label_set_text(title, "Calibrating");
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, -20);
+
+    /* 底部状态提示 */
+    s_calib_hint_lbl = lv_label_create(s_calib_overlay);
+    lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_white(), 0);
+    lv_label_set_text(s_calib_hint_lbl, "Keep still...");
+    lv_obj_align(s_calib_hint_lbl, LV_ALIGN_CENTER, 0, 60);
+
+    s_calib_done_at = 0;
+}
+
+/* 销毁校准遮罩 */
+static void destroy_calib_overlay(void)
+{
+    if (s_calib_overlay) {
+        lv_obj_del(s_calib_overlay);
+        s_calib_overlay = NULL;
+        s_calib_arc = NULL;
+        s_calib_hint_lbl = NULL;
+    }
+    s_calib_done_at = 0;
 }
 
 /* ===================== 公开 API ===================== */
@@ -674,6 +781,46 @@ void flight_instruments_update(void)
         } else {
             /* 所有磁力计均不可用 (HMC5883L 未挂 + MPU-6500 无 AK8963) */
             lv_label_set_text(s_compass_hdg, "N/A");
+        }
+    }
+
+    /* ---- 校准 UI 状态机 ---- */
+    if (s_calib_overlay) {
+        motion_calib_state_t cs = motion_engine_get_calib_state();
+        int pct = motion_engine_get_calib_progress();
+        switch (cs) {
+        case MOTION_CALIB_RUNNING:
+            lv_arc_set_value(s_calib_arc, pct);
+            break;
+        case MOTION_CALIB_DONE:
+            if (s_calib_done_at == 0) {
+                s_calib_done_at = now;
+                if (s_calib_hint_lbl) {
+                    lv_label_set_text(s_calib_hint_lbl, "Done!");
+                    lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_hex(0x00FF88), 0);
+                }
+                lv_arc_set_value(s_calib_arc, 100);
+                lv_obj_set_style_arc_color(s_calib_arc, lv_color_hex(0x00FF88), LV_PART_INDICATOR);
+            }
+            if (now - s_calib_done_at > 1500000) {  /* 1.5s 后自动关闭 */
+                destroy_calib_overlay();
+            }
+            break;
+        case MOTION_CALIB_FAILED:
+            if (s_calib_done_at == 0) {
+                s_calib_done_at = now;
+                if (s_calib_hint_lbl) {
+                    lv_label_set_text(s_calib_hint_lbl, "Failed! Too much motion");
+                    lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_hex(0xFF5050), 0);
+                }
+                lv_obj_set_style_arc_color(s_calib_arc, lv_color_hex(0xFF5050), LV_PART_INDICATOR);
+            }
+            if (now - s_calib_done_at > 2000000) {  /* 2s 后自动关闭 */
+                destroy_calib_overlay();
+            }
+            break;
+        default:
+            break;
         }
     }
 }
