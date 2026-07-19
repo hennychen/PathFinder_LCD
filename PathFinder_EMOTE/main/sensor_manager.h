@@ -16,6 +16,8 @@
 #include "drv_aht20.h"
 #include "drv_bmp280.h"
 #include "drv_mpu9250.h"
+#include "drv_hmc5883l.h"
+#include "drv_qmc5883l.h"
 #include "drv_uv_adc.h"
 
 /* ── 数据快照结构 ── */
@@ -28,16 +30,20 @@ typedef struct {
     int64_t       timestamp_us;
 } env_snapshot_t;
 
-/** IMU 原始数据 (高频更新 50Hz，只保持最新值) */
+/** IMU 原始数据 (高频更新 25Hz，只保持最新值) */
 typedef struct {
-    mpu9250_data_t imu;
-    int64_t        timestamp_us;
+    mpu9250_data_t   imu;       /**< 加速度/陀螺仪/温度 (MPU 内置 AK8963 磁力计可选) */
+    hmc5883l_data_t  compass;   /**< 主罗盘数据（HMC5883L / QMC5883L / AK8963 三选一） */
+    qmc5883l_data_t  qmc;       /**< QMC5883L 原始数据（若接入） */
+    int64_t          timestamp_us;
 } imu_snapshot_t;
 
 /**
  * @brief 初始化传感器管理器
  *        - 创建 I2C-1 总线 (GPIO12=SCL, GPIO14=SDA)
- *        - 初始化 4 个传感器驱动
+ *        - 初始化 6 个传感器驱动 (AHT20 / BMP280 / MPU9250 / HMC5883L / QMC5883L / UV)
+ *        - 磁力计优先级: HMC5883L > QMC5883L > AK8963 (MPU-9250 内置)
+ *        - QMC5883L 是 HMC5883L 的中国替代品，地址 0x2C（非 0x1E）
  *        - 启动 env_task + imu_task
  * @return ESP_OK 或错误码
  */

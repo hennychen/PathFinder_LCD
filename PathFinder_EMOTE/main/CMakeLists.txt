@@ -6,6 +6,8 @@ idf_component_register(
         "drivers/drv_aht20.c"
         "drivers/drv_bmp280.c"
         "drivers/drv_mpu9250.c"
+        "drivers/drv_hmc5883l.c"
+        "drivers/drv_qmc5883l.c"
         "drivers/drv_uv_adc.c"
         "sensor_manager.c"
         "motion_engine.c"

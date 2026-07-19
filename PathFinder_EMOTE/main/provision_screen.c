@@ -193,23 +193,25 @@ void provision_screen_create(lv_obj_t *parent)
         lv_obj_set_style_bg_color(s_pulse_dots[i], lv_color_hex(COLOR_YELLOW), 0);
     }
 
-    /* 跳过按钮 (右下角) */
+    /* 跳过按钮 (底部居中) — 醒目黄色，增强可见性 */
     s_skip_btn = lv_obj_create(s_overlay);
-    lv_obj_set_size(s_skip_btn, 80, 32);
-    lv_obj_align(s_skip_btn, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
+    lv_obj_set_size(s_skip_btn, 110, 40);
+    lv_obj_align(s_skip_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
     lv_obj_clear_flag(s_skip_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_skip_btn, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_opa(s_skip_btn, 38, 0);
-    lv_obj_set_style_bg_color(s_skip_btn, lv_color_hex(COLOR_GREY), 0);
-    lv_obj_set_style_radius(s_skip_btn, 16, 0);
-    lv_obj_set_style_border_width(s_skip_btn, 1, 0);
-    lv_obj_set_style_border_color(s_skip_btn, lv_color_hex(COLOR_GREY), 0);
+    lv_obj_set_style_bg_opa(s_skip_btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(s_skip_btn, lv_color_hex(COLOR_YELLOW), 0);
+    lv_obj_set_style_radius(s_skip_btn, 20, 0);
+    lv_obj_set_style_border_width(s_skip_btn, 2, 0);
+    lv_obj_set_style_border_color(s_skip_btn, lv_color_hex(COLOR_WHITE), 0);
     lv_obj_set_style_pad_all(s_skip_btn, 0, 0);
+    /* 按下状态变色 */
+    lv_obj_set_style_bg_color(s_skip_btn, lv_color_hex(COLOR_RED), LV_STATE_PRESSED);
 
     lv_obj_t *skip_lbl = lv_label_create(s_skip_btn);
-    lv_obj_set_style_text_font(skip_lbl, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(skip_lbl, lv_color_hex(COLOR_GREY), 0);
-    lv_label_set_text(skip_lbl, "Skip");
+    lv_obj_set_style_text_font(skip_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(skip_lbl, lv_color_hex(COLOR_WHITE), 0);
+    lv_label_set_text(skip_lbl, "Skip ▶");
     lv_obj_center(skip_lbl);
 
     lv_obj_add_event_cb(s_skip_btn, skip_btn_cb, LV_EVENT_CLICKED, NULL);

@@ -70,6 +70,10 @@ static lv_obj_t *s_roll_pointer  = NULL;
 /* 叠加仪表对象 */
 static lv_obj_t              *s_compass_bg   = NULL;
 static lv_obj_t              *s_compass_hdg  = NULL;
+static lv_obj_t              *s_compass_face = NULL;  /* 表盘容器（作为可旋转整体） */
+static lv_obj_t              *s_compass_lbl[8] = {NULL}; /* 8 个方位字母 N/NE/E/SE/S/SW/W/NW */
+static lv_obj_t              *s_compass_tri  = NULL;  /* 顶部固定▼指针（表朝向标记）*/
+static int16_t                s_last_heading  = -1;   /* 表盘增量重定位跟踪 (-1=首次) */
 static lv_obj_t              *s_alt_bar      = NULL;   /* 海拔条形柱 */
 static lv_obj_t              *s_alt_label    = NULL;
 static lv_obj_t              *s_bar_bar      = NULL;   /* 气压条形柱 */
@@ -88,6 +92,7 @@ static lv_obj_t *s_pitch_labels[6][2] = {NULL};
 
 /* ===================== 前向声明 ===================== */
 static void att_page_click_cb(lv_event_t *e);
+static void compass_face_update(int16_t heading);
 
 /* ===================== 辅助函数 ===================== */
 
@@ -107,6 +112,65 @@ static void position_compass_tick(lv_obj_t *label, int16_t radius, int16_t beari
     int16_t dx = (int16_t)(radius * sinf(rad));
     int16_t dy = (int16_t)(-radius * cosf(rad));
     lv_obj_align(label, LV_ALIGN_CENTER, dx, dy);
+}
+
+/* ===================== 指南针表盘动态重定位 =====================
+ * 设计思路（户外手表风格表盘旋转）：
+ *   - 外壳固定（包含顶部▼指针、中央数字读数）
+ *   - 表盘内 8 个方位字母随 heading 逆向旋转
+ *   - heading=000°  → N 在顶部
+ *   - heading=090°  → N 转到左侧 (用户朝东，所以北在左手边)
+ *   - heading=180°  → N 转到底部
+ *   - 超过±90°范围的字母变暗（表盘背后的方位）
+ *
+ * 8 个方位字母的固定方位角：
+ *   N=0°  NE=45°  E=90°  SE=135°  S=180°  SW=225°  W=270°  NW=315°
+ */
+static const char *COMPASS_NAMES[8] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+static const int   COMPASS_ANGLES[8] = {0, 45, 90, 135, 180, 225, 270, 315};
+
+#define COMPASS_FACE_RADIUS   30      /* 方位字母在表盘上的半径 */
+#define COMPASS_HDG_THRESHOLD 2       /* heading 变化超过 2° 才重定位 */
+
+static void compass_face_update(int16_t heading)
+{
+    if (!s_compass_face) return;
+
+    /* 增量优化：heading 变化小于阈值不重定位 */
+    if (s_last_heading >= 0 &&
+        abs(heading - s_last_heading) < COMPASS_HDG_THRESHOLD) {
+        return;
+    }
+    s_last_heading = heading;
+
+    /* 逐个重定位 8 个方位字母 */
+    for (int i = 0; i < 8; i++) {
+        if (!s_compass_lbl[i]) continue;
+
+        /* 字母在表盘上的显示角度 = 方位角 - heading
+         * heading 是用户朝向（屏幕顶部），所以北的方位 = 0 - heading */
+        int disp_angle = COMPASS_ANGLES[i] - heading;
+        while (disp_angle < 0)   disp_angle += 360;
+        while (disp_angle >= 360) disp_angle -= 360;
+
+        /* 极坐标转屏幕坐标（北=顶部，顺时针） */
+        int16_t dx = (int16_t)(COMPASS_FACE_RADIUS * sinf((float)disp_angle * (float)M_PI / 180.0f));
+        int16_t dy = (int16_t)(-COMPASS_FACE_RADIUS * cosf((float)disp_angle * (float)M_PI / 180.0f));
+        lv_obj_align(s_compass_lbl[i], LV_ALIGN_CENTER, dx, dy);
+
+        /* 表盘背面（>±90°）的字母变暗（模拟 3D 表盘透视）*/
+        lv_opa_t opa;
+        if (disp_angle > 100 && disp_angle < 260) {
+            opa = LV_OPA_30;          /* 背面字母变暗 */
+        } else if (disp_angle > 80 && disp_angle <= 100) {
+            opa = LV_OPA_60;          /* 边缘过渡区 */
+        } else if (disp_angle >= 260 && disp_angle <= 280) {
+            opa = LV_OPA_60;          /* 边缘过渡区 */
+        } else {
+            opa = LV_OPA_COVER;       /* 正面字母全亮 */
+        }
+        lv_obj_set_style_text_opa(s_compass_lbl[i], opa, 0);
+    }
 }
 
 /* ===================== 画布渲染：姿态指引仪 ===================== */
@@ -330,29 +394,73 @@ static void create_attitude_page(lv_obj_t *parent)
 
     /* ---- 叠加仪表：指南针 / 海拔条 / 气压圆 ---- */
 
-    /* 指南针 (底部中央, 80x80 小圆) */
+    /* ===================== 指南针（表盘旋转风格）======================
+     * 外壳 (100×100 圆形，底部居中)
+     *   ├── 顶部固定▼指针（黄色三角形，指示当前朝向）
+     *   ├── 表盘容器 s_compass_face (88×88 可旋转，8 个方位字母)
+     *   │     ├── N (红色)、E/S/W (白色) — 主方位
+     *   │     └── NE/NW/SE/SW (浅灰小字) — 次方位
+     *   └── 中央数字读数 s_compass_hdg (0~360°)
+     */
     s_compass_bg = lv_obj_create(s_page_att);
-    lv_obj_set_size(s_compass_bg, 80, 80);
+    lv_obj_set_size(s_compass_bg, 100, 100);
     lv_obj_align(s_compass_bg, LV_ALIGN_CENTER, 0, 150);
     lv_obj_clear_flag(s_compass_bg, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_color(s_compass_bg, lv_color_hex(0x111122), 0);
-    lv_obj_set_style_bg_opa(s_compass_bg, LV_OPA_80, 0);
-    lv_obj_set_style_border_color(s_compass_bg, lv_color_hex(0x444466), 0);
-    lv_obj_set_style_border_width(s_compass_bg, 1, 0);
+    lv_obj_set_style_bg_color(s_compass_bg, lv_color_hex(0x0A0E1A), 0);
+    lv_obj_set_style_bg_opa(s_compass_bg, LV_OPA_90, 0);
+    lv_obj_set_style_border_color(s_compass_bg, lv_color_hex(0x666688), 0);
+    lv_obj_set_style_border_width(s_compass_bg, 2, 0);
     lv_obj_set_style_radius(s_compass_bg, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_pad_all(s_compass_bg, 0, 0);
 
-    lv_obj_t *lbl_n = lv_label_create(s_compass_bg);
-    lv_label_set_text(lbl_n, "N");
-    lv_obj_set_style_text_color(lbl_n, COLOR_NORTH, 0);
-    lv_obj_set_style_text_font(lbl_n, &lv_font_montserrat_14, 0);
-    lv_obj_align(lbl_n, LV_ALIGN_TOP_MID, 0, 4);
+    /* 顶部固定▼指针（黄色三角形，指示当前朝向）*/
+    s_compass_tri = lv_label_create(s_compass_bg);
+    lv_obj_set_style_text_font(s_compass_tri, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(s_compass_tri, lv_color_hex(0xFFD700), 0);
+    lv_label_set_text(s_compass_tri, "▼");
+    lv_obj_align(s_compass_tri, LV_ALIGN_TOP_MID, 0, -2);
 
+    /* 表盘容器（8 个方位字母的父对象，便于将来整体旋转）*/
+    s_compass_face = lv_obj_create(s_compass_bg);
+    lv_obj_set_size(s_compass_face, 88, 88);
+    lv_obj_center(s_compass_face);
+    lv_obj_clear_flag(s_compass_face, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(s_compass_face, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_compass_face, 0, 0);
+    lv_obj_set_style_pad_all(s_compass_face, 0, 0);
+    lv_obj_set_style_radius(s_compass_face, LV_RADIUS_CIRCLE, 0);
+
+    /* 8 个方位字母 — 主方位 N/E/S/W 大字号，次方位 NE/NW/SE/SW 小字号 */
+    for (int i = 0; i < 8; i++) {
+        s_compass_lbl[i] = lv_label_create(s_compass_face);
+        bool is_primary = (i % 2 == 0);  /* N(0)/E(2)/S(4)/W(6) */
+
+        if (is_primary) {
+            lv_obj_set_style_text_font(s_compass_lbl[i], &lv_font_montserrat_16, 0);
+            if (i == 0) {
+                /* N 用红色高亮（主方位北）*/
+                lv_obj_set_style_text_color(s_compass_lbl[i], COLOR_NORTH, 0);
+            } else {
+                lv_obj_set_style_text_color(s_compass_lbl[i], lv_color_white(), 0);
+            }
+        } else {
+            /* 次方位 NE/NW/SE/SW 同字号但深灰色 */
+            lv_obj_set_style_text_font(s_compass_lbl[i], &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_color(s_compass_lbl[i], lv_color_hex(0x666677), 0);
+        }
+        lv_label_set_text(s_compass_lbl[i], COMPASS_NAMES[i]);
+    }
+
+    /* 中央数字读数 (不参与表盘旋转，独立显示) */
     s_compass_hdg = lv_label_create(s_compass_bg);
-    lv_obj_set_style_text_font(s_compass_hdg, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_compass_hdg, lv_color_white(), 0);
+    lv_obj_set_style_text_font(s_compass_hdg, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(s_compass_hdg, lv_color_hex(0xFFD700), 0);
     lv_label_set_text(s_compass_hdg, "---");
-    lv_obj_align(s_compass_hdg, LV_ALIGN_CENTER, 0, 8);
+    lv_obj_align(s_compass_hdg, LV_ALIGN_BOTTOM_MID, 0, -8);
+
+    /* 初始定位 8 个方位字母 (heading=0 时 N 在顶部) */
+    s_last_heading = -1;
+    compass_face_update(0);
 
     /* 海拔条形柱 (右侧垂直, 16x120) */
     s_alt_bar = lv_bar_create(s_page_att);
@@ -553,19 +661,18 @@ void flight_instruments_update(void)
             lv_label_set_text(s_bar_label, buf);
         }
 
-        /* 指南针方位角 (MPU-9250 磁力计) */
+        /* 指南针方位角 (优先 HMC5883L，fallback MPU-9250 内置 AK8963)
+         * sensor_manager 已在 imu_snapshot.compass 中完成统一封装
+         * compass.valid 为 true 时，heading 字段可直接使用 */
         imu_snapshot_t imu;
-        if (sensor_manager_get_imu(&imu) == ESP_OK && imu.imu.mag_valid) {
-            float mx = imu.imu.mag[0];
-            float my = imu.imu.mag[1];
-            /* 计算方位角 (atan2 返回 -PI~+PI, 转换为 0~360°) */
-            float heading = atan2f(my, mx) * 180.0f / (float)M_PI;
-            if (heading < 0) heading += 360.0f;
-            /* 更新指南针标签 */
-            snprintf(buf, sizeof(buf), "%03.0f°", heading);
+        if (sensor_manager_get_imu(&imu) == ESP_OK && imu.compass.valid) {
+            /* 更新中央数字读数 (0~360°) */
+            snprintf(buf, sizeof(buf), "%03.0f°", imu.compass.heading);
             lv_label_set_text(s_compass_hdg, buf);
+            /* 更新表盘上 8 个方位字母的位置（随 heading 逆向旋转）*/
+            compass_face_update((int16_t)imu.compass.heading);
         } else {
-            /* 磁力计不可用 (MPU-6500 或初始化失败) */
+            /* 所有磁力计均不可用 (HMC5883L 未挂 + MPU-6500 无 AK8963) */
             lv_label_set_text(s_compass_hdg, "N/A");
         }
     }

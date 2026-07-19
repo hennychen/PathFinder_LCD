@@ -4,6 +4,7 @@
  */
 #include "sensor_manager.h"
 #include <string.h>
+#include <math.h>
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -137,18 +138,67 @@ static void imu_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(200));
 
     while (1) {
+        imu_snapshot_t snap;
+        memset(&snap, 0, sizeof(snap));
+
+        /* 1. 读取 MPU-9250/6500（加速度/陀螺仪/温度/AK8963 磁力计） */
         mpu9250_data_t data;
         if (drv_mpu9250_read(&data) == ESP_OK) {
-            imu_snapshot_t snap;
             snap.imu = data;
-            snap.timestamp_us = esp_timer_get_time();
+        } else {
+            ESP_LOGW(TAG, "MPU-9250/6500 读取失败");
+        }
 
-            /* 更新最新 IMU 快照 */
-            xSemaphoreTake(s_imu_mux, portMAX_DELAY);
-            memcpy(&s_imu_snap, &snap, sizeof(snap));
-            xSemaphoreGive(s_imu_mux);
+        /* 2. 优先读取 HMC5883L 独立磁力计
+         *    仅在 CONFIG_HMC5883L_ENABLE=y 且驱动初始化成功时读取
+         *    避免未挂载模块时频繁 I2C timeout 与 RGB LCD DMA 耦合干扰 */
+#ifdef CONFIG_HMC5883L_ENABLE
+        if (drv_hmc5883l_is_ready()) {
+            if (drv_hmc5883l_read(&snap.compass) != ESP_OK || !snap.compass.valid) {
+                ESP_LOGW(TAG, "HMC5883L 读取失败，尝试 QMC5883L 或 AK8963 fallback");
+                snap.compass.valid = false;
+            }
+        }
+#endif
 
-            /* 将数据喂给运动分析引擎（更新倾角缓存） */
+        /* 2b. QMC5883L fallback（HMC5883L 未挂载或读取失败时）
+         *    QMC5883L 与 HMC5883L 数据结构兼容，将读数填入 compass */
+        if (!snap.compass.valid && drv_qmc5883l_is_ready()) {
+            if (drv_qmc5883l_read(&snap.qmc) == ESP_OK && snap.qmc.valid) {
+                snap.compass.mag[0]  = snap.qmc.mag[0];
+                snap.compass.mag[1]  = snap.qmc.mag[1];
+                snap.compass.mag[2]  = snap.qmc.mag[2];
+                snap.compass.heading = snap.qmc.heading;
+                snap.compass.valid   = true;
+                snap.compass.source  = HMC5883L_SOURCE_HMC5883L;  /* 外接模块 */
+            } else {
+                ESP_LOGW(TAG, "QMC5883L 读取失败，使用 AK8963 fallback");
+            }
+        }
+
+        /* Fallback: HMC5883L 不可用时使用 MPU-9250 内置 AK8963 */
+        if (!snap.compass.valid && snap.imu.mag_valid) {
+            snap.compass.mag[0] = snap.imu.mag[0];
+            snap.compass.mag[1] = snap.imu.mag[1];
+            snap.compass.mag[2] = snap.imu.mag[2];
+            /* 重新计算方位角 (AK8963 数据沿 X/Y 轴) */
+            float heading = atan2f(snap.compass.mag[1], snap.compass.mag[0])
+                            * 180.0f / (float)M_PI;
+            if (heading < 0) heading += 360.0f;
+            snap.compass.heading = heading;
+            snap.compass.valid    = true;
+            snap.compass.source   = HMC5883L_SOURCE_AK8963;
+        }
+
+        snap.timestamp_us = esp_timer_get_time();
+
+        /* 更新最新 IMU 快照 */
+        xSemaphoreTake(s_imu_mux, portMAX_DELAY);
+        memcpy(&s_imu_snap, &snap, sizeof(snap));
+        xSemaphoreGive(s_imu_mux);
+
+        /* 将数据喂给运动分析引擎（更新倾角缓存） */
+        if (data.accel[0] != 0 || data.accel[1] != 0 || data.accel[2] != 0) {
             motion_engine_process(&data);
         }
 
@@ -188,8 +238,11 @@ esp_err_t sensor_manager_init(i2c_master_bus_handle_t bus)
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* 先扫描总线，输出诊断信息 */
+    /* ⚠️ i2c_bus_scan 已禁用：i2c_master_probe 在 ESP32-S3 上与 RGB LCD DMA 存在耦合干扰
+     * 项目历史已验证会引发黑屏。如需调试可在 menuconfig 中临时开启 CONFIG_SENSOR_I2C_SCAN_DEBUG */
+#ifdef CONFIG_SENSOR_I2C_SCAN_DEBUG
     i2c_bus_scan(bus);
+#endif
 
     esp_err_t ret;
 
@@ -212,6 +265,35 @@ esp_err_t sensor_manager_init(i2c_master_bus_handle_t bus)
 
     ret = drv_mpu9250_init(bus, 0);
     if (ret != ESP_OK) ESP_LOGW(TAG, "MPU-9250/6500 初始化失败 (跳过)");
+
+    /* 初始化 HMC5883L 独立磁力计 (作为主罗盘数据源，失败不影响其他传感器)
+     * 注意：未挂载 HMC5883L 模块时，I2C 读取 timeout 会与 RGB LCD DMA 产生干扰
+     * 因此默认禁用，需用户确认模块已接入后在 sdkconfig 设 HMC5883L_ENABLE=1 启用 */
+#ifdef CONFIG_HMC5883L_ENABLE
+    ret = drv_hmc5883l_init(bus, 0);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "HMC5883L 磁力计作为主罗盘启用 (优先级 1)");
+    } else {
+        ESP_LOGW(TAG, "HMC5883L 初始化失败 (尝试 QMC5883L 兼容芯片): %s",
+                 esp_err_to_name(ret));
+    }
+#else
+    ESP_LOGI(TAG, "HMC5883L 驱动未启用 (需 sdkconfig 设 CONFIG_HMC5883L_ENABLE=y)");
+#endif
+
+    /* ── QMC5883L 初始化（仅在 HMC5883L 未启用或失败时尝试）───────────────
+     * QMC5883L 是 HMC5883L 的中国替代品，常记为「HMC5883L」售卖
+     * 关键差异：器件地址 0x2C（非 0x1E）、数据顺序 X-Y-Z 小端序
+     * 实测识别：启动打 I2C 扫描 @0x2C 但 @0x1E 无应答 → 是 QMC5883L */
+    if (!drv_hmc5883l_is_ready()) {
+        ret = drv_qmc5883l_init(bus, 0);
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "QMC5883L 磁力计作为主罗盘启用 (优先级 2，地址 0x2C)");
+        } else {
+            ESP_LOGW(TAG, "QMC5883L 初始化失败 (跳过，使用 MPU-9250 AK8963 作为 fallback): %s",
+                     esp_err_to_name(ret));
+        }
+    }
 
     ret = drv_uv_init(UV_ADC_UNIT, UV_ADC_CHANNEL);
     if (ret != ESP_OK) ESP_LOGW(TAG, "UV ADC 初始化失败 (跳过)");

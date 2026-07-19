@@ -18,4 +18,20 @@ menu "Example Configuration"
         help
             Enable this option, the example will use a pair of semaphores to avoid the tearing effect.
             Note, if the Double Frame Buffer is used, then we can also avoid the tearing effect without the lock.
+
+    config HMC5883L_ENABLE
+        bool "Enable HMC5883L standalone magnetometer"
+        default y
+        help
+            启用 HMC5883L 独立磁力计驱动（作为主罗盘数据源）。
+            未挂载模块时，I2C 读取 timeout 会与 RGB LCD DMA 干扰，
+            确认模块已接入 GPIO12(SCL)/GPIO14(SDA) 后开启。
+
+    config SENSOR_I2C_SCAN_DEBUG
+        bool "Enable I2C bus scan debug"
+        default y
+        help
+            启动时扫描 I2C-1 总线并打印所有应答设备地址。
+            注意：i2c_master_probe 在 ESP32-S3 上与 RGB LCD DMA 存在耦合干扰，
+            调试完成后应关闭。
 endmenu

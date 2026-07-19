@@ -55,7 +55,7 @@ static bool     s_mesh_root_started = false;
 /* ===================== LCD 引脚配置 ===================== */
 #define LCD_H_RES              480
 #define LCD_V_RES              480
-#define LCD_PCLK_HZ            (10 * 1000 * 1000)  /* 10MHz */
+#define LCD_PCLK_HZ            (10 * 1000 * 1000)  /* PathFinder_EMOTE 安全基线：多外设并发下 PSRAM 带宽紧张，≥14MHz 会 FIFO under-run 致黑屏 */
 
 #define PIN_HSYNC              41
 #define PIN_VSYNC              46
@@ -85,11 +85,20 @@ static bool     s_mesh_root_started = false;
 #define TOUCH_I2C_SDA         (GPIO_NUM_20)
 #define CPT_ADDR              0x58
 
-/* ===================== 传感器 I2C-1 ===================== */
-#define SENSOR_I2C_NUM        (1)
-#define SENSOR_I2C_SCL        (GPIO_NUM_12)
-#define SENSOR_I2C_SDA        (GPIO_NUM_14)
-#define SENSOR_I2C_CLK_HZ     (400000)
+/* ===================== 传感器 I2C-1 =====================
+ * 历史问题：原使用 GPIO12(SCL)/GPIO14(SDA) 但接入传感器后 LCD 黑屏
+ * 原因：TK021F2699 板子上 GPIO12/14 被 LCD 信号间接占用（实际验证）
+ * 修复：传感器共享触摸屏 I2C-0 总线（GPIO13/20），地址不冲突
+ *   - CST3530 触摸  @0x58
+ *   - MPU9250         @0x68
+ *   - HMC5883L        @0x1E
+ *   - AHT20           @0x38
+ *   - BMP280          @0x76 / 0x77
+ */
+#define SENSOR_I2C_NUM        (TOUCH_I2C_NUM)
+#define SENSOR_I2C_SCL        (TOUCH_I2C_SCL)
+#define SENSOR_I2C_SDA        (TOUCH_I2C_SDA)
+#define SENSOR_I2C_CLK_HZ     (100000)   /* 降到 100kHz 提升兼容性（上拉较弱时 400kHz 易 NACK） */
 
 /* ===================== LVGL 配置 ===================== */
 #define LVGL_TICK_PERIOD_MS   2
@@ -148,6 +157,11 @@ typedef enum {
 
 /* ===================== 全局变量 ===================== */
 static SemaphoreHandle_t s_lvgl_mux = NULL;
+
+/* VSYNC 帧同步（防撕裂核心） */
+static TaskHandle_t      s_lvgl_task_handle = NULL;
+static volatile bool     s_flush_pending    = false;
+static lv_disp_drv_t    *s_active_disp_drv  = NULL;
 static i2c_master_bus_handle_t s_touch_i2c_bus;
 static i2c_master_dev_handle_t s_touch_i2c_dev;
 static i2c_master_bus_handle_t s_sensor_i2c_bus;
@@ -207,11 +221,16 @@ static void lvgl_unlock(void)
     xSemaphoreGiveRecursive(s_lvgl_mux);
 }
 
-/* ===================== LCD VSYNC 回调 ===================== */
+/* ===================== LCD VSYNC 回调 (ISR 上下文) ===================== */
 static bool IRAM_ATTR on_vsync(esp_lcd_panel_handle_t panel,
     const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx)
 {
-    return false;
+    BaseType_t need_yield = pdFALSE;
+    if (s_flush_pending) {
+        s_flush_pending = false;
+        xTaskNotifyFromISR(s_lvgl_task_handle, 1, eSetBits, &need_yield);
+    }
+    return (need_yield == pdTRUE);
 }
 
 /* ===================== LVGL 刷新回调 ===================== */
@@ -220,7 +239,9 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
     esp_lcd_panel_handle_t panel = drv->user_data;
     esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1,
                               area->x2 + 1, area->y2 + 1, color_map);
-    lv_disp_flush_ready(drv);
+    /* 延迟 flush_ready 到 VSYNC 信号到来，确保帧缓冲在垂直消隐期切换，杜绝撕裂 */
+    s_active_disp_drv = drv;
+    s_flush_pending = true;
 }
 
 /* ===================== LVGL Tick ===================== */
@@ -280,25 +301,14 @@ static void touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
     i2c_master_transmit(s_touch_i2c_dev, end, sizeof(end), -1);
 }
 
-/* ===================== 传感器 I2C-1 总线初始化 ===================== */
+/* ===================== 传感器 I2C 总线初始化 =====================
+ * 说明：传感器与触摸屏共享 I2C-0 总线（GPIO13/20）
+ * 该总线由 touch_init() 先创建，sensor_i2c_init() 仅复用句柄 */
 static esp_err_t sensor_i2c_init(void)
 {
-    i2c_master_bus_config_t bus_cfg = {
-        .i2c_port = SENSOR_I2C_NUM,
-        .sda_io_num = SENSOR_I2C_SDA,
-        .scl_io_num = SENSOR_I2C_SCL,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        .intr_priority = 0,
-        .trans_queue_depth = 0,
-        .flags.enable_internal_pullup = 1,
-    };
-    esp_err_t ret = i2c_new_master_bus(&bus_cfg, &s_sensor_i2c_bus);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "传感器 I2C-1 总线创建失败: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    ESP_LOGI(TAG, "传感器 I2C-1 总线就绪 (SCL=%d SDA=%d)", SENSOR_I2C_SCL, SENSOR_I2C_SDA);
+    /* 复用触摸 I2C-0 总线句柄（地址不冲突，见 SENSOR_I2C_xxx 注释） */
+    s_sensor_i2c_bus = s_touch_i2c_bus;
+    ESP_LOGI(TAG, "传感器 I2C 总线复用触摸 I2C-0 (SCL=%d SDA=%d)", SENSOR_I2C_SCL, SENSOR_I2C_SDA);
     return ESP_OK;
 }
 
@@ -1288,13 +1298,28 @@ static void ui_create(lv_disp_t *disp)
     detail_page_create(scr);
 }
 
-/* ===================== LVGL 主任务 ===================== */
+/* ===================== LVGL 主任务 (VSYNC 同步) ===================== */
 static void lvgl_task(void *arg)
 {
-    ESP_LOGI(TAG, "LVGL 任务启动");
+    s_lvgl_task_handle = xTaskGetCurrentTaskHandle();
+    ESP_LOGI(TAG, "LVGL 任务启动 (VSYNC 帧同步)");
     uint32_t delay = LVGL_TASK_MAX_DELAY;
+    uint32_t notify_val = 0;
     while (1) {
+        /* flush 等待 VSYNC 时，超时设为 2 帧周期防止死锁 */
+        uint32_t wait_ms = s_flush_pending ? 50 : (delay > 0 ? delay : 1);
+        if (wait_ms > LVGL_TASK_MAX_DELAY) wait_ms = LVGL_TASK_MAX_DELAY;
+
+        xTaskNotifyWait(0, 1, &notify_val, pdMS_TO_TICKS(wait_ms));
+
         if (lvgl_lock(-1)) {
+            /* VSYNC 到来后通知 LVGL 缓冲已释放，DMA 在消隐期完成了帧切换 */
+            if (notify_val & 1) {
+                if (s_active_disp_drv) {
+                    lv_disp_flush_ready(s_active_disp_drv);
+                    s_active_disp_drv = NULL;
+                }
+            }
             delay = lv_timer_handler();
             overlay_update();
             emote_engine_tick_locked();
@@ -1304,7 +1329,6 @@ static void lvgl_task(void *arg)
 
         if (delay > LVGL_TASK_MAX_DELAY) delay = LVGL_TASK_MAX_DELAY;
         else if (delay < LVGL_TASK_MIN_DELAY) delay = LVGL_TASK_MIN_DELAY;
-        vTaskDelay(pdMS_TO_TICKS(delay));
     }
 }
 
@@ -1402,7 +1426,7 @@ void app_main(void)
     esp_lcd_rgb_panel_config_t panel_cfg = {
         .data_width = 16,
         .num_fbs = 2,
-        .bounce_buffer_size_px = LCD_H_RES * 40,
+        .bounce_buffer_size_px = LCD_H_RES * 40,  /* 从 80 行减至 40 行，释放 ~110KB 内部 DMA RAM 给 Wi-Fi */
         .clk_src = LCD_CLK_SRC_PLL240M,
         .disp_gpio_num = -1,
         .pclk_gpio_num = PIN_PCLK,
