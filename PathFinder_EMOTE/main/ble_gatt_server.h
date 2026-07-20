@@ -78,4 +78,34 @@ void ble_gatt_notify_wifi_status(const char *json_str);
 typedef void (*ble_wifi_write_cb_t)(const char *json_str);
 void ble_gatt_register_wifi_write_cb(ble_wifi_write_cb_t cb);
 
+/* ── C6 罗盘特征值 (fe06) Notify @10Hz ── */
+
+/**
+ * @brief 推送罗盘方位角到订阅的客户端
+ * @param heading_x100  方位角 × 100 (°, 0~36000)
+ * @param valid         数据是否有效
+ * @param source        数据来源 (0=NONE, 1=HMC5883L, 2=AK8963)
+ */
+void ble_gatt_notify_compass(uint16_t heading_x100, uint8_t valid, uint8_t source);
+
+/* ── C7 追踪聚合特征值 (fe07) Notify @5Hz ── */
+
+/**
+ * @brief 推送 B板追踪数据（声源 + 人脸 + 状态）
+ * @param sound_angle_x10   声源角度 × 10 (°, 0~3600)
+ * @param sound_confidence  声源置信度 0-100
+ * @param sound_valid       声源是否有效
+ * @param face_count        检测到的人脸数量
+ * @param face_found        追踪主脸是否存在
+ * @param face_cx           主脸中心 X
+ * @param face_cy           主脸中心 Y
+ * @param face_w            主脸宽度
+ * @param face_h            主脸高度
+ * @param track_state       追踪状态机状态码
+ */
+void ble_gatt_notify_tracker(uint16_t sound_angle_x10, uint8_t sound_confidence,
+                             uint8_t sound_valid, uint8_t face_count,
+                             uint8_t face_found, int16_t face_cx, int16_t face_cy,
+                             uint16_t face_w, uint16_t face_h, uint8_t track_state);
+
 #endif /* BLE_GATT_SERVER_H */

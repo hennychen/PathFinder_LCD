@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <math.h>
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
@@ -17,9 +18,76 @@
 #include "mesh_node.h"
 #include "mesh_espnow.h"
 #include "comm_link.h"
+#include "mesh_protocol.h"
+#include "esp_timer.h"
 
 static const char *TAG = "tracker_main";
 static tracker_ctx_t s_tracker_ctx;
+
+/* === 摄像头调试开关 ===
+ * 1 = 跳过 Mesh, 强制启动 WiFi Web Viewer (连 "TrackerDev" / 12345678,
+ *     浏览器打开 http://192.168.4.1/ 查看实时画面)
+ * 0 = 正常模式 (Mesh + A板通信)
+ */
+#define TRACKER_DEBUG_CAM 0
+
+/* ===================== Mesh / ESP-NOW 接收状态 ===================== */
+static int64_t s_last_board_a_us = 0;   /* 上次收到 A 板消息的时间戳 */
+
+/* 处理来自 A 板的控制指令 */
+static void handle_board_a_msg(const uint8_t *src_mac, const uint8_t *raw, int raw_len)
+{
+    mesh_msg_t msg;
+    if (!mesh_msg_parse(raw, raw_len, &msg)) {
+        return;  /* CRC 校验失败 */
+    }
+
+    s_last_board_a_us = esp_timer_get_time();
+
+    switch (msg.msg_type) {
+    case MSG_SERVO_CTRL:
+        /* payload: [pan_u16_le][tilt_u16_le]  (0.1° 固定点) */
+        if (msg.payload_len >= 4) {
+            uint16_t pan_fixed  = (uint16_t)(msg.payload[0] | (msg.payload[1] << 8));
+            uint16_t tilt_fixed = (uint16_t)(msg.payload[2] | (msg.payload[3] << 8));
+            float pan  = pan_fixed  / 10.0f;
+            float tilt = tilt_fixed / 10.0f;
+            drv_servo_set_angle(SERVO_PAN, pan);
+            drv_servo_set_angle(SERVO_TILT, tilt);
+            ESP_LOGI(TAG, "Servo override from A: pan=%.1f tilt=%.1f", pan, tilt);
+        }
+        break;
+
+    case MSG_MODE_SWITCH:
+        /* payload: [mode_u8]  (tracker_state_t 枚举值) */
+        if (msg.payload_len >= 1) {
+            uint8_t mode = msg.payload[0];
+            ESP_LOGI(TAG, "Mode switch from A: state=%d", mode);
+            /* 直接写入状态机的当前状态，实现远程模式控制 */
+            s_tracker_ctx.current_state = (tracker_state_t)mode;
+        }
+        break;
+
+    case MSG_HEARTBEAT:
+        /* A 板心跳确认，已通过 s_last_board_a_us 记录 */
+        break;
+
+    default:
+        break;
+    }
+}
+
+/* ESP-NOW 接收回调 (在 WiFi 任务上下文中运行) */
+static void on_espnow_rx(const uint8_t *src_mac, const uint8_t *data, int data_len)
+{
+    handle_board_a_msg(src_mac, data, data_len);
+}
+
+/* Mesh P2P 接收回调 (在 mesh_rx_task 中运行) */
+static void on_mesh_rx(const uint8_t *from_mac, const uint8_t *data, int data_len)
+{
+    handle_board_a_msg(from_mac, data, data_len);
+}
 
 /* Pull PA_EN high at the very start so the AcousticEye board (ES7210 +
    WS2812 + audio circuitry) is powered before any peripheral init. */
@@ -76,10 +144,34 @@ void app_main(void)
         /* Non-fatal: continue without inter-board communication. */
     }
 
-    /* ---- 3. Mesh 子节点初始化 (Phase 5, 暂时禁用) ---- */
-    /* TODO: Mesh需要路由器SSID/PASSWORD配置, 暂时禁用避免crash */
-    esp_err_t mesh_ret = ESP_ERR_NOT_SUPPORTED;
-    printf("[%s] Mesh init SKIPPED (not configured yet)\n", TAG);
+    /* ---- 3. Mesh 子节点初始化 (CHILD 角色, 无需路由器凭据) ---- */
+    /* CHILD 只需 MESH_ID + MESH_AP_PASSWD 即可寻找 ROOT 并加入网络 */
+#if TRACKER_DEBUG_CAM
+    printf("[%s] === CAMERA DEBUG MODE — Mesh skipped, Web Viewer will start ===\n", TAG);
+    esp_err_t mesh_ret = ESP_FAIL;  /* 模拟 Mesh 失败, 触发 Web Viewer */
+#else
+    esp_err_t mesh_ret = mesh_node_init(MESH_ROLE_CHILD);
+    if (mesh_ret == ESP_OK) {
+        mesh_ret = mesh_node_start();
+        if (mesh_ret == ESP_OK) {
+            printf("[%s] Mesh CHILD started, waiting for ROOT...\n", TAG);
+
+            /* ESP-NOW 初始化 (在 Mesh/WiFi 启动后, 自动适配 Mesh 信道) */
+            mesh_espnow_init();
+            mesh_espnow_register_rx_cb(on_espnow_rx);
+
+            /* 注册 Mesh P2P 接收回调 */
+            mesh_node_register_rx_cb(on_mesh_rx);
+
+            /* 初始化通信链路 (获取 ROOT MAC, 注册 ESP-NOW peer) */
+            comm_link_init();
+        } else {
+            printf("[%s] Mesh start FAILED: %s\n", TAG, esp_err_to_name(mesh_ret));
+        }
+    } else {
+        printf("[%s] Mesh init FAILED: %s\n", TAG, esp_err_to_name(mesh_ret));
+    }
+#endif
 
     /* ---- 4. OV2640 camera — initialise before ES7210 ---- */
     ret = drv_ov2640_init();
@@ -94,10 +186,14 @@ void app_main(void)
         printf("[%s] Vision task init FAILED (non-fatal): %s\n", TAG, esp_err_to_name(ret));
     }
 
-    /* Start web viewer (WiFi AP + HTTP server for camera preview) */
-    ret = web_viewer_start();
-    if (ret != ESP_OK) {
-        printf("[%s] Web viewer start FAILED (non-fatal): %s\n", TAG, esp_err_to_name(ret));
+    /* Web viewer 仅在 Mesh 未启动时启用 (两者都占用 WiFi, 互斥) */
+    if (mesh_ret != ESP_OK) {
+        ret = web_viewer_start();
+        if (ret != ESP_OK) {
+            printf("[%s] Web viewer start FAILED (non-fatal): %s\n", TAG, esp_err_to_name(ret));
+        }
+    } else {
+        printf("[%s] Web viewer SKIPPED (Mesh is using WiFi)\n", TAG);
     }
 
     ret = drv_es7210_init();

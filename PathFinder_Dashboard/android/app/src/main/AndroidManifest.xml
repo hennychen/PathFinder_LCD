@@ -5,11 +5,14 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- HTTP 明文访问权限 (用于摄像头预览 192.168.4.1) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true"/>
     <application
         android:label="pathfinder_dashboard"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

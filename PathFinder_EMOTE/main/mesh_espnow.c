@@ -59,8 +59,8 @@ esp_err_t mesh_espnow_init(void)
         return ESP_OK;
     }
 
-    /* Get local MAC */
-    esp_wifi_get_mac(WIFI_IF_AP, s_local_mac);
+    /* Get local MAC (STA interface — AP 不再存在，因 Mesh ROOT 已移除) */
+    esp_wifi_get_mac(WIFI_IF_STA, s_local_mac);
     ESP_LOGI(TAG, "Local MAC: %02x:%02x:%02x:%02x:%02x:%02x",
              s_local_mac[0], s_local_mac[1], s_local_mac[2],
              s_local_mac[3], s_local_mac[4], s_local_mac[5]);
@@ -119,7 +119,7 @@ esp_err_t mesh_espnow_add_peer(const uint8_t *mac)
     esp_now_peer_info_t peer;
     memset(&peer, 0, sizeof(esp_now_peer_info_t));
     peer.channel = 0;  /* 0 = current Wi-Fi channel */
-    peer.ifidx = WIFI_IF_AP;
+    peer.ifidx = WIFI_IF_STA;  /* STA interface (Mesh AP removed) */
     peer.encrypt = false;
     memcpy(peer.peer_addr, mac, 6);
 

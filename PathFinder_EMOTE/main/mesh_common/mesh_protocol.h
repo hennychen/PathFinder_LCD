@@ -41,7 +41,37 @@ typedef enum {
     MSG_HEARTBEAT      = 0x10,   /* Periodic heartbeat (B -> A, every 500ms) */
     MSG_MESH_READY     = 0x11,   /* Mesh link established notification */
     MSG_MESH_BYE       = 0x12,   /* Mesh link disconnecting */
+    /* Sensor data (A -> B, 2Hz) — all A-board sensors in one compact packet */
+    MSG_SENSOR_DATA    = 0x20,
+    /* Conversation sync (B -> A) — dialog state, LLM emotion, subtitle text */
+    MSG_DIALOG_STATE   = 0x21,  /* 1 byte: 0=idle 1=listening 2=speaking 3=connecting */
+    MSG_EMOTION        = 0x22,  /* N bytes ASCII: emotion name (e.g. "happy", "neutral") */
+    MSG_CHAT_TEXT      = 0x23,  /* N bytes UTF-8: subtitle text (≤246B per frame) */
 } mesh_msg_type_t;
+
+/* ── Sensor data packet (A-board → B-board, ~72 bytes) ── */
+#pragma pack(push, 1)
+typedef struct {
+    /* AHT20 — temperature & humidity */
+    float temperature;       /**< °C */
+    float humidity;          /**< %RH */
+    /* BMP280 — pressure & altitude */
+    float pressure;          /**< Pa */
+    float altitude;          /**< m */
+    /* UV index */
+    float uv_index;          /**< 0-11+ */
+    /* MPU9250 — accel & gyro */
+    float accel[3];          /**< g (x, y, z) */
+    float gyro[3];           /**< °/s (x, y, z) */
+    float imu_temp;          /**< °C */
+    /* HMC5883L/QMC5883L — compass */
+    float heading;           /**< 0-360° */
+    float mag[3];            /**< µT (x, y, z) */
+    /* validity flags */
+    uint8_t flags;           /**< bit0:AHT20 bit1:BMP280 bit2:UV bit3:IMU bit4:Compass */
+    uint32_t timestamp_ms;   /**< sender uptime (ms) */
+} sensor_packet_t;
+#pragma pack(pop)
 
 /* ── Compact frame structure (matches ESP-NOW payload) ── */
 #pragma pack(push, 1)

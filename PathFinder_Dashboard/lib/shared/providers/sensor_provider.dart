@@ -4,6 +4,8 @@ import 'ble_provider.dart';
 import '../models/env_snapshot.dart';
 import '../models/imu_snapshot.dart';
 import '../models/emote_info.dart';
+import '../models/compass_snapshot.dart';
+import '../models/tracker_snapshot.dart';
 
 final envStreamProvider = StreamProvider<EnvSnapshot>((ref) {
   final ble = ref.watch(bleServiceProvider);
@@ -49,4 +51,16 @@ final emoteStreamProvider = StreamProvider<EmoteInfo>((ref) {
     );
     return info;
   });
+});
+
+/// 罗盘方位角流 (C6) — 纯实时展示，不接入持久化
+final compassStreamProvider = StreamProvider<CompassSnapshot>((ref) {
+  final ble = ref.watch(bleServiceProvider);
+  return ble.subscribeCompass();
+});
+
+/// 追踪聚合流 (C7) — 声源角度 + 人脸检测，纯实时展示
+final trackerStreamProvider = StreamProvider<TrackerSnapshot>((ref) {
+  final ble = ref.watch(bleServiceProvider);
+  return ble.subscribeTracker();
 });

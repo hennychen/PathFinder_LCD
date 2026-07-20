@@ -13,6 +13,7 @@
  */
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -22,6 +23,7 @@
 #include "esp_lcd_panel_rgb.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
+#include "driver/uart.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
@@ -51,6 +53,14 @@ static uint8_t  s_tracker_state = 0;        /* B板状态机状态 */
 static uint8_t  s_child_mac[6] = {0};       /* B板 MAC 地址 */
 static int64_t  s_last_heartbeat_us = 0;    /* 上次心跳时间 */
 static bool     s_mesh_root_started = false;
+
+/* ===================== B板人脸检测数据存储 ===================== */
+static uint8_t  s_face_found = 0;           /* 是否检测到人脸 */
+static int16_t  s_face_cx = 0;              /* 主脸中心 X */
+static int16_t  s_face_cy = 0;              /* 主脸中心 Y */
+static uint16_t s_face_w = 0;               /* 主脸宽度 */
+static uint16_t s_face_h = 0;               /* 主脸高度 */
+static int64_t  s_last_face_us = 0;         /* 上次收到人脸数据时间 */
 
 /* ===================== LCD 引脚配置 ===================== */
 #define LCD_H_RES              480
@@ -105,7 +115,7 @@ static bool     s_mesh_root_started = false;
 #define LVGL_TASK_MAX_DELAY   500
 #define LVGL_TASK_MIN_DELAY   1
 #define LVGL_TASK_STACK       (12 * 1024)
-#define LVGL_TASK_PRIORITY    1
+#define LVGL_TASK_PRIORITY    4   /* 高于 BLE_NOTIFY(2) 和 SENS_UL(3)，避免对话时 LCD 花屏 */
 
 /* ===================== 叠加层更新频率 ===================== */
 #define OVERLAY_ENV_PERIOD_MS    1000   /* 环境数据 1Hz */
@@ -1023,6 +1033,33 @@ static void emote_engine_tick_locked(void)
     }
 }
 
+/* ── 对话/情感/字幕 pending (WiFi任务→LVGL线程安全传递) ── */
+#include "emote_engine.h"
+#include "subtitle_view.h"
+static volatile uint8_t s_pending_dialogue = 0;
+static volatile bool    s_pending_dialogue_flag = false;
+static char             s_pending_emotion[32] = {0};
+static volatile bool    s_pending_emotion_flag = false;
+static char             s_pending_subtitle[248] = {0};
+static volatile bool    s_pending_subtitle_flag = false;
+
+/* 在 LVGL 线程中消费 pending 数据 */
+static void consume_pending_events(void)
+{
+    if (s_pending_dialogue_flag) {
+        s_pending_dialogue_flag = false;
+        emote_engine_on_dialogue(s_pending_dialogue);
+    }
+    if (s_pending_emotion_flag) {
+        s_pending_emotion_flag = false;
+        emote_engine_on_emotion(s_pending_emotion);
+    }
+    if (s_pending_subtitle_flag) {
+        s_pending_subtitle_flag = false;
+        subtitle_view_update(s_pending_subtitle);
+    }
+}
+
 /* ===================== 长按回调 ===================== */
 static void long_press_cb(lv_event_t *e)
 {
@@ -1092,7 +1129,15 @@ static void handle_tracker_msg(const uint8_t *src_mac, const uint8_t *raw, int r
         break;
 
     case MSG_FACE_INFO:
-        /* 人脸信息暂时仅记录,后续可更新 UI */
+        /* 人脸信息: [found][cx_lo][cx_hi][cy_lo][cy_hi][w_lo][w_hi][h_lo][h_hi] */
+        if (msg.payload_len >= 9) {
+            s_face_found = msg.payload[0];
+            s_face_cx = (int16_t)(msg.payload[1] | (msg.payload[2] << 8));
+            s_face_cy = (int16_t)(msg.payload[3] | (msg.payload[4] << 8));
+            s_face_w = (uint16_t)(msg.payload[5] | (msg.payload[6] << 8));
+            s_face_h = (uint16_t)(msg.payload[7] | (msg.payload[8] << 8));
+            s_last_face_us = esp_timer_get_time();
+        }
         break;
 
     case MSG_HEARTBEAT:
@@ -1104,6 +1149,32 @@ static void handle_tracker_msg(const uint8_t *src_mac, const uint8_t *raw, int r
                  src_mac[0], src_mac[1], src_mac[2],
                  src_mac[3], src_mac[4], src_mac[5]);
         s_last_heartbeat_us = esp_timer_get_time();
+        break;
+
+    /* B板小智对话状态（0=idle 1=listening 2=speaking 3=connecting） */
+    case MSG_DIALOG_STATE:
+        if (msg.payload_len >= 1) {
+            s_pending_dialogue = msg.payload[0];
+            s_pending_dialogue_flag = true;
+        }
+        break;
+
+    /* B板 LLM 情感标签 (ASCII string, e.g. "happy") */
+    case MSG_EMOTION:
+        if (msg.payload_len > 0 && msg.payload_len < sizeof(s_pending_emotion)) {
+            memcpy(s_pending_emotion, msg.payload, msg.payload_len);
+            s_pending_emotion[msg.payload_len] = '\0';
+            s_pending_emotion_flag = true;
+        }
+        break;
+
+    /* B板字幕文本 (UTF-8, 中文/英文混合) */
+    case MSG_CHAT_TEXT:
+        if (msg.payload_len > 0 && msg.payload_len < sizeof(s_pending_subtitle)) {
+            memcpy(s_pending_subtitle, msg.payload, msg.payload_len);
+            s_pending_subtitle[msg.payload_len] = '\0';
+            s_pending_subtitle_flag = true;
+        }
         break;
 
     default:
@@ -1149,26 +1220,22 @@ static void on_wifi_prov_state(wifi_prov_state_t state, const char *ssid, const 
             lvgl_unlock();
         }
 
-        /* 配网成功 → 启动 Mesh ROOT 节点 */
+        /* 配网成功 → 初始化 ESP-NOW（不需要 Mesh ROOT）
+         *
+         * 历史背景：A板之前启动 Mesh ROOT，与 B板(Mesh CHILD)组成 Mesh 网络。
+         * 但 Mesh ROOT 的网络栈会干扰 UDP 通信（B板 TTS 无声音问题已证实）。
+         * 现 B板已改为标准 WiFi + 独立 ESP-NOW，A板同步调整。
+         *
+         * ESP-NOW 只需 WiFi 驱动已启动，不依赖 Mesh。两板连接同一个路由器
+         * 后自动在同一 WiFi 信道上，ESP-NOW 即可正常通信。 */
         if (!s_mesh_root_started) {
-            const char *r_ssid = wifi_config_manager_get_router_ssid();
-            const char *r_pass = wifi_config_manager_get_router_pass();
+            s_mesh_root_started = true;  /* 标记已初始化（避免重复） */
 
-            ESP_LOGI(TAG, "WiFi 已连接，启动 Mesh ROOT (router='%s')", r_ssid);
+            ESP_LOGI(TAG, "WiFi 已连接，初始化 ESP-NOW（无 Mesh）");
 
-            esp_err_t mesh_ret = mesh_node_start_root_after_wifi(r_ssid, r_pass);
-            if (mesh_ret != ESP_OK) {
-                ESP_LOGE(TAG, "Mesh ROOT 启动失败: %s", esp_err_to_name(mesh_ret));
-            } else {
-                s_mesh_root_started = true;
-            }
-
-            /* ESP-NOW 初始化 (在 Mesh/WiFi 启动后) */
+            /* ESP-NOW 初始化 (仅需 WiFi 驱动已启动) */
             mesh_espnow_init();
             mesh_espnow_register_rx_cb(on_espnow_rx);
-
-            /* 注册 Mesh P2P 接收回调 */
-            mesh_node_register_rx_cb(on_mesh_rx);
         }
         break;
 
@@ -1294,6 +1361,9 @@ static void ui_create(lv_disp_t *disp)
     /* ---- 飞行仪表盘覆盖层 ---- */
     flight_instruments_create(scr);
 
+    /* ---- 中文字幕条 ---- */
+    subtitle_view_init(scr);
+
     /* ---- 明细页覆盖层（最后创建 → 位于最顶层）---- */
     detail_page_create(scr);
 }
@@ -1322,7 +1392,9 @@ static void lvgl_task(void *arg)
             }
             delay = lv_timer_handler();
             overlay_update();
+            consume_pending_events();    /* 消费 ESP-NOW pending (表情/字幕) */
             emote_engine_tick_locked();
+            subtitle_view_tick();         /* 字幕自动淡出 */
             flight_instruments_update();
             lvgl_unlock();
         }
@@ -1340,6 +1412,7 @@ static void ble_notify_task(void *arg)
 
     char last_emote_name[32] = {0};
     int  emote_check_counter = 0;
+    int  tracker_notify_counter = 0;
 
     while (1) {
         /* ── 环境数据 @1Hz ── */
@@ -1379,6 +1452,32 @@ static void ble_notify_task(void *arg)
                 95  /* confidence placeholder */
             );
 
+            /* ── C6 罗盘方位角 @10Hz ── */
+            if (imu.compass.valid) {
+                ble_gatt_notify_compass(
+                    (uint16_t)(imu.compass.heading * 100.0f),
+                    1,
+                    (uint8_t)imu.compass.source);
+            }
+
+            /* ── C7 追踪聚合 @5Hz (每 200ms 推送) ── */
+            if (++tracker_notify_counter >= 2) {
+                tracker_notify_counter = 0;
+                /* B板心跳超时检测 (5秒无心跳认为离线) */
+                bool bboard_online = (esp_timer_get_time() - s_last_heartbeat_us) < 5000000;
+                uint8_t sound_valid = (s_tracker_valid && bboard_online) ? 1 : 0;
+                uint8_t face_count = (s_face_found && bboard_online) ? 1 : 0;
+                ble_gatt_notify_tracker(
+                    (uint16_t)(s_tracker_angle * 10.0f),
+                    0,                         /* sound_confidence (B板暂未传) */
+                    sound_valid,
+                    face_count,
+                    s_face_found,
+                    s_face_cx, s_face_cy,
+                    s_face_w, s_face_h,
+                    s_tracker_state);
+            }
+
             /* ── 表情状态 @2Hz (每 500ms 检查一次) ── */
             if (++emote_check_counter >= 5) {
                 emote_check_counter = 0;
@@ -1393,6 +1492,80 @@ static void ble_notify_task(void *arg)
 
             vTaskDelay(pdMS_TO_TICKS(100));
         }
+    }
+}
+
+/* ===================== 传感器数据上报 (A板 → B板) ===================== */
+/* 传输方式：UART0 TX(GPIO43) 带帧头二进制帧
+ * 帧格式：[0xAA][0x55][0x20][LEN][sensor_packet_t][CRC8]
+ * B板通过 UART1 RX(GPIO20) 接收解析
+ * 同时尝试 ESP-NOW 发送（如果 Mesh 可用）
+ */
+#define SENSOR_FRAME_HEAD0   0xAA
+#define SENSOR_FRAME_HEAD1   0x55
+
+static void sensor_uplink_task(void *arg)
+{
+    /* 不等待 Mesh，直接通过 UART 发送（UART0 console 已初始化） */
+    ESP_LOGI(TAG, "Sensor uplink task started (2Hz, UART0+ESP-NOW)");
+
+    const TickType_t period = pdMS_TO_TICKS(500);  /* 2Hz */
+    while (1) {
+        sensor_packet_t pkt;
+        memset(&pkt, 0, sizeof(pkt));
+        bool has_data = false;
+
+        /* 环境数据 (AHT20 + BMP280 + UV) */
+        env_snapshot_t env;
+        if (sensor_manager_get_env(&env) == ESP_OK) {
+            pkt.temperature = env.aht20.temperature;
+            pkt.humidity    = env.aht20.humidity;
+            pkt.pressure    = env.bmp280.pressure;
+            pkt.altitude    = env.bmp280.altitude;
+            pkt.uv_index    = env.uv.uv_index;
+            if (env.aht20.humidity > 0.0f)   pkt.flags |= 0x01;
+            if (env.bmp280.pressure > 0.0f)  pkt.flags |= 0x02;
+            pkt.flags |= 0x04;
+            has_data = true;
+        }
+
+        /* IMU + 罗盘 (MPU9250 + HMC5883L) */
+        imu_snapshot_t imu;
+        if (sensor_manager_get_imu(&imu) == ESP_OK) {
+            memcpy(pkt.accel, imu.imu.accel, sizeof(float) * 3);
+            memcpy(pkt.gyro,  imu.imu.gyro,  sizeof(float) * 3);
+            pkt.imu_temp = imu.imu.temp;
+            pkt.flags |= 0x08;
+            if (imu.compass.valid) {
+                pkt.heading = imu.compass.heading;
+                memcpy(pkt.mag, imu.compass.mag, sizeof(float) * 3);
+                pkt.flags |= 0x10;
+            }
+            has_data = true;
+        }
+
+        if (has_data) {
+            pkt.timestamp_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+
+            /* ── UART0 帧发送 ── */
+            uint8_t frame[5 + sizeof(sensor_packet_t)];
+            frame[0] = SENSOR_FRAME_HEAD0;
+            frame[1] = SENSOR_FRAME_HEAD1;
+            frame[2] = MSG_SENSOR_DATA;
+            frame[3] = (uint8_t)sizeof(sensor_packet_t);
+            memcpy(&frame[4], &pkt, sizeof(sensor_packet_t));
+            frame[4 + sizeof(sensor_packet_t)] =
+                mesh_crc8(&frame[2], 2 + sizeof(sensor_packet_t));
+            uart_write_bytes(UART_NUM_0, (const char*)frame, sizeof(frame));
+
+            /* ── ESP-NOW 发送（如果可用） ── */
+            if (mesh_espnow_is_ready()) {
+                mesh_espnow_send(ESPNOW_BROADCAST_MAC, MSG_SENSOR_DATA,
+                                 (const uint8_t*)&pkt, sizeof(pkt));
+            }
+        }
+
+        vTaskDelay(period);
     }
 }
 
@@ -1544,6 +1717,9 @@ void app_main(void)
 
     /* ---- BLE 数据推送任务 ---- */
     xTaskCreate(ble_notify_task, "BLE_NOTIFY", 6 * 1024, NULL, 2, NULL);
+
+    /* ---- 传感器数据 Mesh 上报任务 (A板 → B板 2Hz) ---- */
+    xTaskCreate(sensor_uplink_task, "SENS_UL", 4 * 1024, NULL, 3, NULL);
 
     ESP_LOGI(TAG, "PathFinder EMOTE 初始化完成!");
 }

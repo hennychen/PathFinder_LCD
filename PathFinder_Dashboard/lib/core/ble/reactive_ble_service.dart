@@ -7,6 +7,8 @@ import 'ble_wifi_writer.dart';
 import '../../shared/models/env_snapshot.dart';
 import '../../shared/models/imu_snapshot.dart';
 import '../../shared/models/emote_info.dart';
+import '../../shared/models/compass_snapshot.dart';
+import '../../shared/models/tracker_snapshot.dart';
 
 /// 基于 flutter_reactive_ble 的真实 BLE 服务实现
 class ReactiveBleService implements BleServiceInterface {
@@ -21,6 +23,8 @@ class ReactiveBleService implements BleServiceInterface {
   final _envController = StreamController<EnvSnapshot>.broadcast();
   final _motionController = StreamController<ImuSnapshot>.broadcast();
   final _emoteController = StreamController<EmoteInfo>.broadcast();
+  final _compassController = StreamController<CompassSnapshot>.broadcast();
+  final _trackerController = StreamController<TrackerSnapshot>.broadcast();
 
   // 扫描结果
   final _scanResults = <DiscoveredDevice>[];
@@ -33,6 +37,8 @@ class ReactiveBleService implements BleServiceInterface {
   StreamSubscription<List<int>>? _envSub;
   StreamSubscription<List<int>>? _motionSub;
   StreamSubscription<List<int>>? _emoteSub;
+  StreamSubscription<List<int>>? _compassSub;
+  StreamSubscription<List<int>>? _trackerSub;
   String? _connectedDeviceId;
 
   QualifiedCharacteristic _envChar(String id) => QualifiedCharacteristic(
@@ -49,6 +55,18 @@ class ReactiveBleService implements BleServiceInterface {
 
   QualifiedCharacteristic _emoteChar(String id) => QualifiedCharacteristic(
     characteristicId: c4EmoteStateUuid,
+    serviceId: pfServiceUuid,
+    deviceId: id,
+  );
+
+  QualifiedCharacteristic _compassChar(String id) => QualifiedCharacteristic(
+    characteristicId: c6CompassUuid,
+    serviceId: pfServiceUuid,
+    deviceId: id,
+  );
+
+  QualifiedCharacteristic _trackerChar(String id) => QualifiedCharacteristic(
+    characteristicId: c7TrackerUuid,
     serviceId: pfServiceUuid,
     deviceId: id,
   );
@@ -70,6 +88,12 @@ class ReactiveBleService implements BleServiceInterface {
 
   @override
   Stream<EmoteInfo> subscribeEmote() => _emoteController.stream;
+
+  @override
+  Stream<CompassSnapshot> subscribeCompass() => _compassController.stream;
+
+  @override
+  Stream<TrackerSnapshot> subscribeTracker() => _trackerController.stream;
 
   /// 扫描结果流
   Stream<List<DiscoveredDevice>> get devicesStream => _devicesController.stream;
@@ -194,15 +218,47 @@ class ReactiveBleService implements BleServiceInterface {
         );
       } catch (_) {}
     }, onError: (_) {});
+
+    // 订阅罗盘方位角 notify
+    _compassSub?.cancel();
+    _compassSub = _ble.subscribeToCharacteristic(_compassChar(id)).listen((
+      data,
+    ) {
+      try {
+        _compassController.add(
+          CompassSnapshot.fromBle(
+            data is Uint8List ? data : Uint8List.fromList(data),
+          ),
+        );
+      } catch (_) {}
+    }, onError: (_) {});
+
+    // 订阅追踪聚合 notify
+    _trackerSub?.cancel();
+    _trackerSub = _ble.subscribeToCharacteristic(_trackerChar(id)).listen((
+      data,
+    ) {
+      try {
+        _trackerController.add(
+          TrackerSnapshot.fromBle(
+            data is Uint8List ? data : Uint8List.fromList(data),
+          ),
+        );
+      } catch (_) {}
+    }, onError: (_) {});
   }
 
   void _unsubscribeCharacteristics() {
     _envSub?.cancel();
     _motionSub?.cancel();
     _emoteSub?.cancel();
+    _compassSub?.cancel();
+    _trackerSub?.cancel();
     _envSub = null;
     _motionSub = null;
     _emoteSub = null;
+    _compassSub = null;
+    _trackerSub = null;
   }
 
   @override
@@ -265,6 +321,8 @@ class ReactiveBleService implements BleServiceInterface {
     _envController.close();
     _motionController.close();
     _emoteController.close();
+    _compassController.close();
+    _trackerController.close();
     _devicesController.close();
   }
 }

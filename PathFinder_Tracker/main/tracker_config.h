@@ -28,8 +28,8 @@
 #define WS2812_LED_COUNT            36
 
 /* ======================== MG90S 舵机 ======================== */
-#define SERVO_PAN_GPIO              GPIO_NUM_14
-#define SERVO_TILT_GPIO             GPIO_NUM_47
+#define SERVO_PAN_GPIO              GPIO_NUM_47
+#define SERVO_TILT_GPIO             GPIO_NUM_14
 #define SERVO_FREQ_HZ               50
 #define SERVO_MIN_PULSE_US          500
 #define SERVO_MAX_PULSE_US          2500

@@ -24,6 +24,12 @@ abstract class AppColors {
   static const warningCapsuleBg = Color(0x33FFB400); // ~20% opacity
   static const urgentCapsuleBg = Color(0x33FF5050); // ~20% opacity
 
+  // ---- 罗盘 / 追踪配色 ----
+  static const compassPrimary = Color(0xFFFF8800); // 橙色 — 罗盘
+  static const compassText = Color(0xFFFFAA44);
+  static const trackerPrimary = Color(0xFFB468FF); // 紫色 — 追踪
+  static const trackerText = Color(0xFFC88AFF);
+
   // ---- 通用文字 ----
   static const textPrimary = Color(0xFFE0E0E8);
   static const textSecondary = Color(0xFF888899);

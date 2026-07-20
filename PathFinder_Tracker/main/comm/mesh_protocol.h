@@ -25,6 +25,15 @@
 #define MESH_MAX_LAYER           2
 #define MESH_CHANNEL             0   /* 0 = auto-follow router */
 
+/* ── Router SSID (REQUIRED for ALL nodes, including CHILD) ──
+ * ESP-WIFI-MESH uses router SSID to identify the mesh network.
+ * CHILD nodes need this to find the correct mesh, even though
+ * they don't connect to the router directly.
+ * ⚠️  This MUST match the SSID configured on Board A (ROOT).
+ *     Change this to match your actual router SSID before building.
+ */
+#define MESH_ROUTER_SSID         "PathFinder_2.4G"
+
 /* ── ESP-NOW constraints ── */
 #define ESPNOW_MAX_PAYLOAD       246   /* 250 - 4 header/tail bytes */
 

@@ -1,6 +1,8 @@
 import '../../shared/models/env_snapshot.dart';
 import '../../shared/models/imu_snapshot.dart';
 import '../../shared/models/emote_info.dart';
+import '../../shared/models/compass_snapshot.dart';
+import '../../shared/models/tracker_snapshot.dart';
 
 enum BleConnectionState {
   disconnected,
@@ -17,6 +19,8 @@ abstract class BleServiceInterface {
   Stream<EnvSnapshot> subscribeEnv();
   Stream<ImuSnapshot> subscribeMotion();
   Stream<EmoteInfo> subscribeEmote();
+  Stream<CompassSnapshot> subscribeCompass();
+  Stream<TrackerSnapshot> subscribeTracker();
   Future<void> startScan();
   Future<void> stopScan();
   Future<void> connect(String deviceId);

@@ -262,6 +262,76 @@ esp_err_t emote_engine_init(lv_obj_t *eaf_obj, lv_obj_t *name_label)
     return ESP_OK;
 }
 
+/* ── 对话/情感状态覆盖 (三级优先级: 手动 > 对话 > 情感 > 传感器) ── */
+static int64_t s_dialogue_override_us = 0;   /* 对话状态覆盖到期时间 */
+static int64_t s_emotion_override_us  = 0;   /* LLM情感覆盖到期时间 */
+
+#define DIALOGUE_OVERRIDE_MS   5000  /* 对话状态覆盖 5s */
+#define EMOTION_OVERRIDE_MS    5000  /* 情感覆盖 5s */
+
+/* 对话状态 → 表情名映射 */
+static const char *dialogue_state_to_emote(uint8_t state)
+{
+    switch (state) {
+        case 1:  return "investigate";   /* listening: 探究 */
+        case 2:  return "smile_static";  /* speaking: 微笑 */
+        case 3:  return "ponder";        /* connecting/thinking: 思考 */
+        default: return NULL;            /* idle: 交还传感器评估 */
+    }
+}
+
+/* LLM emotion 字符串 → 表情名映射 */
+static const char *emotion_to_emote(const char *emotion)
+{
+    if (!emotion || !*emotion) return NULL;
+    if (strstr(emotion, "happy") || strstr(emotion, "smile"))    return "smile_05s";
+    if (strstr(emotion, "laugh"))                                 return "mock_05s";
+    if (strstr(emotion, "sad") || strstr(emotion, "cry"))        return "sad_05s15s";
+    if (strstr(emotion, "angry") || strstr(emotion, "mad"))      return "shy_20s_40s";
+    if (strstr(emotion, "surpris") || strstr(emotion, "shock"))  return "question_05s";
+    if (strstr(emotion, "think") || strstr(emotion, "ponder"))   return "ponder_05s";
+    if (strstr(emotion, "sleepy") || strstr(emotion, "tired"))   return "yawn_20s";
+    if (strstr(emotion, "love"))                                  return "smile_static";
+    return NULL;  /* neutral / unknown: 不覆盖 */
+}
+
+void emote_engine_on_dialogue(uint8_t state)
+{
+    if (state == 0) {
+        /* idle: 提前结束覆盖，交还传感器评估 */
+        s_dialogue_override_us = 0;
+        ESP_LOGI(TAG, "对话结束，交还传感器评估");
+        return;
+    }
+    s_dialogue_override_us = esp_timer_get_time() + (int64_t)DIALOGUE_OVERRIDE_MS * 1000;
+
+    const char *emote_name = dialogue_state_to_emote(state);
+    if (emote_name) {
+        int idx = find_emote_index(emote_name);
+        if (idx >= 0 && idx != s_state.current_idx) {
+            ESP_LOGI(TAG, "对话覆盖: state=%u → %s", state, emote_name);
+            play_emote(idx);
+        }
+    }
+}
+
+void emote_engine_on_emotion(const char *emotion)
+{
+    if (!emotion) return;
+    s_emotion_override_us = esp_timer_get_time() + (int64_t)EMOTION_OVERRIDE_MS * 1000;
+
+    const char *emote_name = emotion_to_emote(emotion);
+    if (emote_name) {
+        int idx = find_emote_index(emote_name);
+        if (idx >= 0 && idx != s_state.current_idx) {
+            ESP_LOGI(TAG, "情感覆盖: %s → %s", emotion, emote_name);
+            play_emote(idx);
+        }
+    } else {
+        ESP_LOGD(TAG, "情感 '%s' 无映射", emotion);
+    }
+}
+
 void emote_engine_tick(void)
 {
     int64_t now = esp_timer_get_time();
@@ -271,6 +341,22 @@ void emote_engine_tick(void)
         return;
     }
     s_state.manual_override_us = 0;
+
+    /* 对话状态覆盖 (优先级次高) */
+    if (s_dialogue_override_us > 0) {
+        if (now < s_dialogue_override_us) {
+            return;  /* 对话期间保持当前表情 */
+        }
+        s_dialogue_override_us = 0;  /* 过期清零 */
+    }
+
+    /* LLM 情感覆盖 */
+    if (s_emotion_override_us > 0) {
+        if (now < s_emotion_override_us) {
+            return;
+        }
+        s_emotion_override_us = 0;
+    }
 
     /* 评估间隔未到 */
     if (now - s_state.last_eval_us < (int64_t)EVAL_INTERVAL_MS * 1000) {

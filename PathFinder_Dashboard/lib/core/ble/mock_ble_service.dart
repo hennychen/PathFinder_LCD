@@ -4,6 +4,8 @@ import 'ble_service_interface.dart';
 import '../../shared/models/env_snapshot.dart';
 import '../../shared/models/imu_snapshot.dart';
 import '../../shared/models/emote_info.dart';
+import '../../shared/models/compass_snapshot.dart';
+import '../../shared/models/tracker_snapshot.dart';
 import '../../shared/models/motion_event.dart';
 
 class MockBleService implements BleServiceInterface {
@@ -12,9 +14,13 @@ class MockBleService implements BleServiceInterface {
   final _envController = StreamController<EnvSnapshot>.broadcast();
   final _motionController = StreamController<ImuSnapshot>.broadcast();
   final _emoteController = StreamController<EmoteInfo>.broadcast();
+  final _compassController = StreamController<CompassSnapshot>.broadcast();
+  final _trackerController = StreamController<TrackerSnapshot>.broadcast();
   Timer? _envTimer;
   Timer? _motionTimer;
   Timer? _emoteTimer;
+  Timer? _compassTimer;
+  Timer? _trackerTimer;
   final _random = Random();
   int _tick = 0;
   BleConnectionState _currentState = BleConnectionState.disconnected;
@@ -35,6 +41,12 @@ class MockBleService implements BleServiceInterface {
   Stream<ImuSnapshot> subscribeMotion() => _motionController.stream;
   @override
   Stream<EmoteInfo> subscribeEmote() => _emoteController.stream;
+
+  @override
+  Stream<CompassSnapshot> subscribeCompass() => _compassController.stream;
+
+  @override
+  Stream<TrackerSnapshot> subscribeTracker() => _trackerController.stream;
 
   @override
   Future<void> startScan() async {
@@ -125,15 +137,53 @@ class MockBleService implements BleServiceInterface {
         ),
       );
     });
+
+    // Compass heading @2Hz (缓慢旋转)
+    _compassTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      final heading = (_tick * 5.0) % 360.0;
+      _compassController.add(
+        CompassSnapshot(
+          timestamp: DateTime.now(),
+          heading: heading,
+          valid: true,
+          source: 1,
+        ),
+      );
+    });
+
+    // Tracker @5Hz (声源角度 + 人脸随机出现)
+    bool faceVisible = false;
+    _trackerTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (_random.nextInt(10) < 3) faceVisible = !faceVisible;
+      _trackerController.add(
+        TrackerSnapshot(
+          timestamp: DateTime.now(),
+          soundAngle: (sin(_tick / 8.0) * 180.0 + 180.0),
+          soundConfidence: 70 + _random.nextInt(30),
+          soundValid: true,
+          faceCount: faceVisible ? 1 : 0,
+          faceFound: faceVisible,
+          faceCx: 160 + _random.nextInt(40) - 20,
+          faceCy: 120 + _random.nextInt(30) - 15,
+          faceW: 60 + _random.nextInt(40),
+          faceH: 80 + _random.nextInt(40),
+          trackState: faceVisible ? 2 : 0,
+        ),
+      );
+    });
   }
 
   void _stopMockData() {
     _envTimer?.cancel();
     _motionTimer?.cancel();
     _emoteTimer?.cancel();
+    _compassTimer?.cancel();
+    _trackerTimer?.cancel();
     _envTimer = null;
     _motionTimer = null;
     _emoteTimer = null;
+    _compassTimer = null;
+    _trackerTimer = null;
   }
 
   void dispose() {
@@ -142,5 +192,7 @@ class MockBleService implements BleServiceInterface {
     _envController.close();
     _motionController.close();
     _emoteController.close();
+    _compassController.close();
+    _trackerController.close();
   }
 }

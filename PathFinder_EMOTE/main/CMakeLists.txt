@@ -12,6 +12,7 @@ idf_component_register(
         "sensor_manager.c"
         "motion_engine.c"
         "emote_engine.c"
+        "subtitle_view.c"
         "ble_gatt_server.c"
         "wifi_config_manager.c"
         "web_portal.c"
@@ -27,6 +28,7 @@ idf_component_register(
     REQUIRES
         esp_driver_gpio
         esp_driver_i2c
+        esp_driver_uart
         esp_adc
         esp_lcd
         esp_timer

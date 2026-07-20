@@ -262,11 +262,19 @@ esp_err_t mesh_node_init(mesh_role_t role)
     memcpy((uint8_t *)&mesh_cfg.mesh_id, mesh_id, 6);
     mesh_cfg.channel = MESH_CHANNEL;
 
-    /* Router config (for root node to connect to router) */
-    if (strlen(s_router_ssid) > 0) {
-        mesh_cfg.router.ssid_len = strlen(s_router_ssid);
-        memcpy((uint8_t *)&mesh_cfg.router.ssid, s_router_ssid,
-               mesh_cfg.router.ssid_len);
+    /* Router config — required for ALL nodes (ROOT and CHILD).
+       ESP-WIFI-MESH uses router SSID to identify the mesh network.
+       CHILD nodes need the SSID to find the correct mesh, even though
+       they don't connect to the router directly. */
+    if (strlen(s_router_ssid) == 0) {
+        /* Use compile-time default if not set via mesh_node_set_router() */
+        strncpy(s_router_ssid, MESH_ROUTER_SSID, sizeof(s_router_ssid) - 1);
+        ESP_LOGI(TAG, "Using default router SSID: '%s'", s_router_ssid);
+    }
+    mesh_cfg.router.ssid_len = strlen(s_router_ssid);
+    memcpy((uint8_t *)&mesh_cfg.router.ssid, s_router_ssid,
+           mesh_cfg.router.ssid_len);
+    if (strlen(s_router_pass) > 0) {
         memcpy((uint8_t *)&mesh_cfg.router.password, s_router_pass,
                strlen(s_router_pass));
     }

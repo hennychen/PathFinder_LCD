@@ -443,8 +443,14 @@ esp_err_t mesh_node_start_root_after_wifi(const char *ssid, const char *password
     esp_mesh_set_max_layer(MESH_MAX_LAYER);
     esp_mesh_fix_root(true);
 
-    /* Start mesh */
-    ESP_ERROR_CHECK(esp_mesh_start());
+    /* Start mesh — 容错处理：B板(xiaozhi)已是 ROOT 时会失败，不应 abort */
+    ret = esp_mesh_start();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "esp_mesh_start() failed: %s — 另一板可能已是 ROOT，继续运行(非致命)",
+                 esp_err_to_name(ret));
+        esp_mesh_deinit();
+        return ret;
+    }
     s_mesh_started = true;
     ESP_LOGI(TAG, "Mesh ROOT started after WiFi provisioning (router='%s')", ssid);
 

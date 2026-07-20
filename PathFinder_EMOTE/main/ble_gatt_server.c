@@ -38,6 +38,12 @@ static const ble_uuid16_t c4_emote_uuid = BLE_UUID16_INIT(0xFE04);
 /* C5 WiFi: 0xFE05 (Write + Notify) */
 static const ble_uuid16_t c5_wifi_uuid = BLE_UUID16_INIT(0xFE05);
 
+/* C6 Compass: 0xFE06 (Read + Notify) */
+static const ble_uuid16_t c6_compass_uuid = BLE_UUID16_INIT(0xFE06);
+
+/* C7 Tracker: 0xFE07 (Read + Notify) */
+static const ble_uuid16_t c7_tracker_uuid = BLE_UUID16_INIT(0xFE07);
+
 /* ── 连接状态 ── */
 static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static bool s_initialized = false;
@@ -47,12 +53,16 @@ static uint16_t s_c2_handle = 0;
 static uint16_t s_c3_handle = 0;
 static uint16_t s_c4_handle = 0;
 static uint16_t s_c5_handle = 0;
+static uint16_t s_c6_handle = 0;
+static uint16_t s_c7_handle = 0;
 
 /* ── CCCD 订阅状态 ── */
 static bool s_c2_subscribed = false;
 static bool s_c3_subscribed = false;
 static bool s_c4_subscribed = false;
 static bool s_c5_subscribed = false;
+static bool s_c6_subscribed = false;
+static bool s_c7_subscribed = false;
 
 /* ── C5 WiFi Write 回调 + JSON 分包缓冲 ── */
 static ble_wifi_write_cb_t s_wifi_write_cb = NULL;
@@ -152,6 +162,18 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
                 .val_handle = &s_c5_handle,
             },
             {
+                .uuid = &c6_compass_uuid.u,
+                .access_cb = gatt_chr_access,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+                .val_handle = &s_c6_handle,
+            },
+            {
+                .uuid = &c7_tracker_uuid.u,
+                .access_cb = gatt_chr_access,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+                .val_handle = &s_c7_handle,
+            },
+            {
                 0, /* No more characteristics */
             }
         },
@@ -190,6 +212,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         s_c3_subscribed = false;
         s_c4_subscribed = false;
         s_c5_subscribed = false;
+        s_c6_subscribed = false;
+        s_c7_subscribed = false;
         s_json_buf_pos = 0;
         /* 重新广播 */
         ble_gatt_server_start_adv();
@@ -211,6 +235,12 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             } else if (event->subscribe.attr_handle == s_c5_handle) {
                 s_c5_subscribed = true;
                 ESP_LOGI(TAG, "C5(WiFi) subscribed");
+            } else if (event->subscribe.attr_handle == s_c6_handle) {
+                s_c6_subscribed = true;
+                ESP_LOGI(TAG, "C6(Compass) subscribed");
+            } else if (event->subscribe.attr_handle == s_c7_handle) {
+                s_c7_subscribed = true;
+                ESP_LOGI(TAG, "C7(Tracker) subscribed");
             }
         } else if (event->subscribe.cur_notify == 0) {
             /* 客户端取消了 notify */
@@ -226,6 +256,12 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             } else if (event->subscribe.attr_handle == s_c5_handle) {
                 s_c5_subscribed = false;
                 ESP_LOGI(TAG, "C5(WiFi) unsubscribed");
+            } else if (event->subscribe.attr_handle == s_c6_handle) {
+                s_c6_subscribed = false;
+                ESP_LOGI(TAG, "C6(Compass) unsubscribed");
+            } else if (event->subscribe.attr_handle == s_c7_handle) {
+                s_c7_subscribed = false;
+                ESP_LOGI(TAG, "C7(Tracker) unsubscribed");
             }
         }
         break;
@@ -483,4 +519,76 @@ void ble_gatt_notify_wifi_status(const char *json_str)
 void ble_gatt_register_wifi_write_cb(ble_wifi_write_cb_t cb)
 {
     s_wifi_write_cb = cb;
+}
+
+/* ════════════════════════════════════════════════════════════
+ *  C6 罗盘方位角 — Notify
+ * ════════════════════════════════════════════════════════════ */
+
+void ble_gatt_notify_compass(uint16_t heading_x100, uint8_t valid, uint8_t source)
+{
+    if (!s_initialized || s_conn_handle == BLE_HS_CONN_HANDLE_NONE)
+        return;
+    if (!s_c6_subscribed)
+        return;
+
+    /* C6 帧: 4 bytes
+     * [0-1] heading_u16 LE (方位角 × 100)
+     * [2]   valid_u8
+     * [3]   source_u8
+     */
+    uint8_t buf[4];
+    put_u16le(&buf[0], heading_x100);
+    buf[2] = valid;
+    buf[3] = source;
+
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(buf, sizeof(buf));
+    if (om) {
+        ble_gattc_notify_custom(s_conn_handle, s_c6_handle, om);
+    }
+}
+
+/* ════════════════════════════════════════════════════════════
+ *  C7 追踪聚合 — Notify (声源 + 人脸 + 状态)
+ * ════════════════════════════════════════════════════════════ */
+
+void ble_gatt_notify_tracker(uint16_t sound_angle_x10, uint8_t sound_confidence,
+                             uint8_t sound_valid, uint8_t face_count,
+                             uint8_t face_found, int16_t face_cx, int16_t face_cy,
+                             uint16_t face_w, uint16_t face_h, uint8_t track_state)
+{
+    if (!s_initialized || s_conn_handle == BLE_HS_CONN_HANDLE_NONE)
+        return;
+    if (!s_c7_subscribed)
+        return;
+
+    /* C7 帧: 15 bytes
+     * [0-1]  sound_angle_u16 LE (声源角度 × 10)
+     * [2]    sound_confidence_u8
+     * [3]    sound_valid_u8
+     * [4]    face_count_u8
+     * [5]    face_found_u8
+     * [6-7]  face_cx_i16 LE
+     * [8-9]  face_cy_i16 LE
+     * [10-11] face_w_u16 LE
+     * [12-13] face_h_u16 LE
+     * [14]   track_state_u8
+     */
+    uint8_t buf[15];
+    memset(buf, 0, sizeof(buf));
+    put_u16le(&buf[0], sound_angle_x10);
+    buf[2] = sound_confidence;
+    buf[3] = sound_valid;
+    buf[4] = face_count;
+    buf[5] = face_found;
+    put_u16le(&buf[6], (uint16_t)face_cx);
+    put_u16le(&buf[8], (uint16_t)face_cy);
+    put_u16le(&buf[10], face_w);
+    put_u16le(&buf[12], face_h);
+    buf[14] = track_state;
+
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(buf, sizeof(buf));
+    if (om) {
+        ble_gattc_notify_custom(s_conn_handle, s_c7_handle, om);
+    }
 }

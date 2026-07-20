@@ -8,6 +8,7 @@ import '../../shared/widgets/animated_counter.dart';
 import 'widgets/attitude_indicator.dart';
 import 'widgets/imu_wave_chart.dart';
 import 'widgets/event_timeline.dart';
+import 'widgets/compass_card.dart';
 
 class MotionScreen extends ConsumerWidget {
   const MotionScreen({super.key});
@@ -16,6 +17,7 @@ class MotionScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final connState = ref.watch(connectionStateProvider);
     final motionData = ref.watch(motionStreamProvider);
+    final compassData = ref.watch(compassStreamProvider);
 
     return connState.when(
       data: (state) => state == BleConnectionState.connected
@@ -68,6 +70,13 @@ class MotionScreen extends ConsumerWidget {
                       value: imu.accelMag,
                       color: AppColors.motionText,
                       decimals: 3,
+                    ),
+                    const SizedBox(height: 12),
+                    // ── 罗盘方位角 (C6) ──
+                    compassData.when(
+                      data: (compass) => CompassCard(compass: compass),
+                      loading: () => const SizedBox.shrink(),
+                      error: (_, __) => const SizedBox.shrink(),
                     ),
                     const SizedBox(height: 28),
                     const Text(
