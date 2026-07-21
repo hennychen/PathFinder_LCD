@@ -30,6 +30,13 @@ static const char *TAG = "drv_servo";
 static const ledc_channel_t s_channel[2] = { LEDC_CHANNEL_0, LEDC_CHANNEL_1 };
 static const int            s_gpio[2]     = { SERVO_PAN_GPIO, SERVO_TILT_GPIO };
 
+/* Per-servo safe angle limits — indexed by servo_id_t.
+ * These are NARROWER than the mechanical 0-180 range to prevent the
+ * servo from being driven into its hard stop, which causes the motor to
+ * stall, draw high current, and overheat (burning smell). */
+static const float s_safe_min[2] = { SERVO_PAN_SAFE_MIN,  SERVO_TILT_SAFE_MIN };
+static const float s_safe_max[2] = { SERVO_PAN_SAFE_MAX,  SERVO_TILT_SAFE_MAX };
+
 /* Last commanded angle for each servo (used by get / hold-on-back). */
 static float s_angle[2] = { SERVO_CENTER_ANGLE, SERVO_CENTER_ANGLE };
 static bool  s_ready    = false;
@@ -38,16 +45,18 @@ static bool  s_ready    = false;
 /*  Helpers                                                          */
 /* ----------------------------------------------------------------- */
 
-static inline float clamp_angle(float angle)
+/* Clamp to the per-servo safe range — this is the primary defence against
+ * stall-induced overheating. Each servo gets its own [min,max] window. */
+static inline float clamp_angle_safe(servo_id_t id, float angle)
 {
-    if (angle < (float)SERVO_MIN_ANGLE) return (float)SERVO_MIN_ANGLE;
-    if (angle > (float)SERVO_MAX_ANGLE) return (float)SERVO_MAX_ANGLE;
+    if (angle < s_safe_min[id]) return s_safe_min[id];
+    if (angle > s_safe_max[id]) return s_safe_max[id];
     return angle;
 }
 
 static inline uint32_t angle_to_duty(float angle)
 {
-    angle = clamp_angle(angle);
+    /* clamp_angle_safe is applied by the caller; here we just convert. */
 
     /* Pulse width in microseconds for the requested angle */
     float span     = (float)(SERVO_MAX_PULSE_US - SERVO_MIN_PULSE_US);
@@ -60,6 +69,7 @@ static inline uint32_t angle_to_duty(float angle)
 
 static esp_err_t apply_duty(servo_id_t id, float angle)
 {
+    angle = clamp_angle_safe(id, angle);
     uint32_t duty = angle_to_duty(angle);
 
     esp_err_t ret = ledc_set_duty(SERVO_LEDC_MODE, s_channel[id], duty);
@@ -131,11 +141,14 @@ esp_err_t drv_servo_set_angle(servo_id_t id, float angle)
         return ESP_ERR_INVALID_ARG;
     }
 
-    angle = clamp_angle(angle);
+    /* apply_duty() clamps to the per-servo safe window, so any
+     * out-of-range command is silently pulled back — no stall.
+     * Store the CLAMPED angle so get_angle / hold-current stay consistent
+     * with what was actually written to the hardware. */
 
     esp_err_t ret = apply_duty(id, angle);
     if (ret == ESP_OK) {
-        s_angle[id] = angle;
+        s_angle[id] = clamp_angle_safe(id, angle);
     }
     return ret;
 }
@@ -159,10 +172,18 @@ float drv_servo_angle_from_sound(float sound_angle)
     float rel = sound_angle;
     if (rel > 180.0f) rel -= 360.0f;   /* now rel ∈ (-180, 180] */
 
-    /* Map: front(0°)->90°(centre), right(+90°)->0°, left(-90°)->180°
-       For rear hemisphere (|rel| > 90°), clamp at physical limit.
-       - +90°..+180° (rear-right) -> clamp to 0° (rightmost)
-       - -90°..-180° (rear-left)  -> clamp to 180° (leftmost)   */
+    /* Map: front(0°)->90°(centre), right(+90°)->rightmost, left(-90°)->leftmost.
+     *
+     * Rear hemisphere handling (|rel| > 90°):
+     *   The old code clamped to 0/180 (hard stop) which stalls the motor
+     *   and causes overheating (burning smell).  Instead we HOLD the
+     *   current angle — the source is behind the device where a single
+     *   pan servo cannot track it anyway, so holding is both safer and
+     *   more sensible than jamming into the mechanical stop. */
+    if (rel > 90.0f || rel < -90.0f) {
+        return s_angle[SERVO_PAN];   /* hold current, don't slam to stop */
+    }
+
     float pan = SERVO_CENTER_ANGLE - rel;
-    return clamp_angle(pan);   /* clamp_angle limits to [0°, 180°] */
+    return clamp_angle_safe(SERVO_PAN, pan);
 }

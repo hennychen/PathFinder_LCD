@@ -31,10 +31,24 @@
 #define SERVO_PAN_GPIO              GPIO_NUM_47
 #define SERVO_TILT_GPIO             GPIO_NUM_14
 #define SERVO_FREQ_HZ               50
-#define SERVO_MIN_PULSE_US          500
-#define SERVO_MAX_PULSE_US          2500
+
+/* 脉宽范围：收窄以避免驱动舵机超越机械限位导致堵转发热。
+ * MG90S 机械止点对应的脉宽通常比 datasheet 标称的 500-2500μs 窄，
+ * 留出安全余量可避免到达 0/180 极端角度时电机持续堵转(糊味根因)。
+ * 若仍发热，可进一步收窄到 700/2300。 */
+#define SERVO_MIN_PULSE_US          600
+#define SERVO_MAX_PULSE_US          2400
 #define SERVO_MIN_ANGLE             0
 #define SERVO_MAX_ANGLE             180
+
+/* 软件安全角度限位(每个舵机独立)：比机械 0-180 更窄，
+ * 防止命令到物理极限导致堵转过热。以舵盘中心 90 为基准留余量。
+ * 二次收窄：用户反馈仍需更小角度，限制到 ±60(pan)/±55(tilt)。
+ * 注意: SAFE_MIN/MAX 必须落在 [SERVO_MIN_ANGLE, SERVO_MAX_ANGLE] 内。 */
+#define SERVO_PAN_SAFE_MIN          30
+#define SERVO_PAN_SAFE_MAX          150
+#define SERVO_TILT_SAFE_MIN         45
+#define SERVO_TILT_SAFE_MAX         135
 
 /* ======================== UART 板间通信 ======================== */
 /* NOTE: GPIO33-37 被 Octal PSRAM 占用, 不可用。

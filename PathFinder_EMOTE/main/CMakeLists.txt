@@ -1,6 +1,8 @@
 idf_component_register(
     SRCS
         "main.c"
+        "font_hzk_16.c"
+        "font_hzk_32.c"
         "LCD.c"
         "app_emote_assets.c"
         "drivers/drv_aht20.c"
