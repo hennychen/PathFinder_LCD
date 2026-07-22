@@ -18,6 +18,12 @@ PathFinder_Tracker/sdkconfig
 PathFinder_Tracker/sdkconfig.old
 PathFinder_Tracker/dependencies.lock
 
+# xiaozhi-esp32 build artifacts
+xiaozhi-esp32/build/
+xiaozhi-esp32/.cache/
+xiaozhi-esp32/managed_components/
+xiaozhi-esp32/dependencies.lock
+
 # Flutter build artifacts
 PathFinder_Dashboard/build/
 PathFinder_Dashboard/.dart_tool/

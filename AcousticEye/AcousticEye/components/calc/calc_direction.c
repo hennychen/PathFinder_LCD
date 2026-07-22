@@ -65,8 +65,10 @@ uint8_t I2CRegData[8];
 #define SSL_SOUND_VELOCITY          343.0f
 /** @brief 物理上允许的最大到达时间差。 */
 #define SSL_MAX_DELAY_S             (SSL_MIC_DISTANCE_M / SSL_SOUND_VELOCITY)
-/** @brief GCC-PHAT 在互相关中心左右搜索的最大采样点偏移。 */
-#define SSL_MAX_OFFSET              7
+/** @brief GCC-PHAT 在互相关中心左右搜索的最大采样点偏移。
+ *  物理极限 = 0.050/343 * 48000 = 6.997 ≈ 7 samples。
+ *  设为 9 给抛物线插值和边界留出余量，避免峰值被截断。 */
+#define SSL_MAX_OFFSET              9
 /** @} */
 
 /**
@@ -84,18 +86,18 @@ uint8_t I2CRegData[8];
  * @{
  */
 /** @brief 默认声音活动量阈值。activity 小于该值时认为没有足够声音。 */
-#define MIN_ACTIVITY_VALUE          (-2.20f)
+#define MIN_ACTIVITY_VALUE          (-4.0f)
 /** @brief 四通道平均 RMS 下限，过低表示声音太弱。 */
-#define MIN_RAW_RMS_LEVEL           0.0060f
+#define MIN_RAW_RMS_LEVEL           0.0005f
 /** @brief 原始采样峰值上限，过高可能表示削顶或异常。 */
 #define MAX_RAW_PEAK_LEVEL          0.98f
 
 /** @brief GCC 互相关峰值下限，过低表示峰值不明显。 */
-#define MIN_PEAK_VALUE_GCC          0.0025f
+#define MIN_PEAK_VALUE_GCC          0.0015f
 /** @brief GCC 主峰与次峰比值下限，过低表示方向置信度不足。 */
-#define MIN_PEAK_RATIO_GCC          1.05f
+#define MIN_PEAK_RATIO_GCC          1.02f
 /** @brief 两轴合成方向向量下限，过低表示方向性不足。 */
-#define MIN_DIRECTION_VECTOR        0.03f
+#define MIN_DIRECTION_VECTOR        0.02f
 /** @brief 查找次峰时避开主峰附近的保护点数。 */
 #define PEAK_RATIO_GUARD_BINS       1
 /** @} */
@@ -145,8 +147,8 @@ static i2c_master_bus_handle_t s_i2c_bus_handle = NULL;
 #define ES7210_MIC_BIAS             ES7210_MIC_BIAS_2V87
 /** @brief 麦克风模拟增益配置。 */
 #define ES7210_MIC_GAIN             ES7210_MIC_GAIN_37_5DB
-/** @brief ADC 数字音量，单位 dB。 */
-#define ES7210_ADC_VOLUME_DB        0
+/** @brief ADC 数字音量，单位 dB，范围 -95~+32。+30dB 大幅提升信号。 */
+#define ES7210_ADC_VOLUME_DB        30
 /** @} */
 
 /**
@@ -177,13 +179,13 @@ static i2c_master_bus_handle_t s_i2c_bus_handle = NULL;
  * @{
  */
 #define ES7210_I2C_PORT             I2C_NUM_0
-#define ES7210_I2C_SDA_GPIO         GPIO_NUM_10
-#define ES7210_I2C_SCL_GPIO         GPIO_NUM_6
+#define ES7210_I2C_SDA_GPIO         GPIO_NUM_38
+#define ES7210_I2C_SCL_GPIO         GPIO_NUM_39
 
-#define ES7210_I2S_MCLK_GPIO        GPIO_NUM_9
-#define ES7210_I2S_BCLK_GPIO        GPIO_NUM_5
-#define ES7210_I2S_WS_GPIO          GPIO_NUM_4
-#define ES7210_I2S_DIN_GPIO         GPIO_NUM_8
+#define ES7210_I2S_MCLK_GPIO        GPIO_NUM_42
+#define ES7210_I2S_BCLK_GPIO        GPIO_NUM_41
+#define ES7210_I2S_WS_GPIO          GPIO_NUM_40
+#define ES7210_I2S_DIN_GPIO         GPIO_NUM_21
 /** @} */
 
 
@@ -756,7 +758,16 @@ static float angle_filter_update(float raw_angle)
  */
 float calcAngle(void)
 {
-    static uint32_t valid_print_count = 0;
+    static uint32_t dbg_skip = 0;  /* 调试打印节流计数器 */
+    static uint32_t warmup_cnt = 0; /* 启动后前 5 帧丢弃（初始化瞬态 peak=1.0） */
+
+    if (warmup_cnt < 5) {
+        warmup_cnt++;
+        if (warmup_cnt == 5) {
+            ESP_LOGI(TAG, "Warmup done, starting normal detection");
+        }
+        return -1.0f;
+    }
 
     /** @brief 第一层过滤：过弱声音、过低 RMS 或削顶峰值直接判为无效。 */
     float activity = calc_activity_value();
@@ -766,11 +777,11 @@ float calcAngle(void)
     if (activity < ActivitySetValue || raw_rms < MIN_RAW_RMS_LEVEL || raw_peak > MAX_RAW_PEAK_LEVEL) {
         angle_filter_reset();
         g_debug_info.angle_final = -1.0f;
-        // if ((valid_print_count++ % 1) == 0) {
-        //     ESP_LOGW(TAG, "Weak sound or clipped: activity=%.3f rms=%.4f peak=%.4f",
-        //              activity, raw_rms, raw_peak);
-        // }
-        vTaskDelay(pdMS_TO_TICKS(10));
+        g_debug_info.activity_value = activity;
+        if (dbg_skip++ % 50 == 0) {
+            ESP_LOGW(TAG, "L1-REJECT act=%.3f (thr=%.3f) rms=%.4f (thr=%.4f) peak=%.4f",
+                     activity, ActivitySetValue, raw_rms, MIN_RAW_RMS_LEVEL, raw_peak);
+        }
         return -1.0f;
     }
 
@@ -831,20 +842,16 @@ float calcAngle(void)
 
     if (!valid) {
         g_debug_info.angle_final = -1.0f;
-        // if ((valid_print_count++ % 1) == 0) {
-        //     ESP_LOGW(TAG, "GCC invalid: angle=%.1f delay=[%.2f,%.2f] ratio=[%.2f,%.2f] "
-        //              "peak=[%.4f,%.4f] act=%.2f rms=%.4f",
-        //              angle_raw,
-        //              delay_x,
-        //              delay_y,
-        //              ratio_x,
-        //              ratio_y,
-        //              peak_x,
-        //              peak_y,
-        //              activity,
-        //              raw_rms);
-        // }
-            vTaskDelay(pdMS_TO_TICKS(10));
+        if (dbg_skip++ % 50 == 0) {
+            ESP_LOGW(TAG, "L2-REJECT ang=%.1f delay=[%.2f,%.2f] ratio=[%.2f,%.2f] "
+                     "peak=[%.4f,%.4f] act=%.2f dir=%.3f flags: %s%s%s%s",
+                     angle_raw, delay_x, delay_y, ratio_x, ratio_y,
+                     peak_x, peak_y, activity, dir_vec,
+                     g_debug_info.weak_peak ? "WP " : "",
+                     g_debug_info.low_confidence ? "LC " : "",
+                     g_debug_info.weak_axis ? "WA " : "",
+                     g_debug_info.clipped_delay ? "CD" : "");
+        }
         return -1.0f;
     }
 
@@ -852,43 +859,10 @@ float calcAngle(void)
     float angle_stable = angle_filter_update(angle_raw);
     if (angle_stable < 0.0f) {
         g_debug_info.angle_final = -1.0f;
-        // if ((valid_print_count++ % 1) == 0) {
-        //     ESP_LOGW(TAG, "Angle unstable: angle=%.1f delay=[%.2f,%.2f] ratio=[%.2f,%.2f] "
-        //              "peak=[%.4f,%.4f] act=%.2f rms=%.4f",
-        //              angle_raw,
-        //              delay_x,
-        //              delay_y,
-        //              ratio_x,
-        //              ratio_y,
-        //              peak_x,
-        //              peak_y,
-        //              activity,
-        //              raw_rms);
-        // }
-        vTaskDelay(pdMS_TO_TICKS(10));
         return -1.0f;
     }
 
     g_debug_info.angle_final = angle_stable;
-
-    /** @brief 调试输出：打印稳定角度和 GCC-PHAT 中间指标。 */
-    if ((valid_print_count++ % 1) == 0) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-        // printf("GCC angle: %-12s angle=%6.1f deg raw=%6.1f delay=[%5.2f,%5.2f] "
-        //        "ratio=[%.2f,%.2f] peak=[%.4f,%.4f] act=%.2f rms=%.4f\n",
-        //        angle_to_direction(angle_stable),
-        //        angle_stable,
-        //        angle_raw,
-        //        delay_x,
-        //        delay_y,
-        //        ratio_x,
-        //        ratio_y,
-        //        peak_x,
-        //        peak_y,
-        //        activity,
-        //        raw_rms);
-    }
-   //  
     return angle_stable;
 }
 
@@ -940,6 +914,20 @@ static esp_err_t init_es7210(void)
     esp_err_t err = i2c_new_master_bus(&i2c_bus_cfg, &s_i2c_bus_handle);
     if (err != ESP_OK) return err;
 
+    /** @brief I2C 总线扫描：检测哪些地址有设备响应。 */
+    ESP_LOGI(TAG, "Scanning I2C bus (SDA=%d, SCL=%d)...", ES7210_I2C_SDA_GPIO, ES7210_I2C_SCL_GPIO);
+    int found = 0;
+    for (uint8_t addr = 1; addr < 0x78; addr++) {
+        esp_err_t probe = i2c_master_probe(s_i2c_bus_handle, addr, 10);
+        if (probe == ESP_OK) {
+            ESP_LOGI(TAG, "  I2C device found at 0x%02x", addr);
+            found++;
+        }
+    }
+    if (found == 0) {
+        ESP_LOGE(TAG, "No I2C devices found! Check SDA/SCL wiring and ES7210 power.");
+    }
+
     /** @brief 创建 ES7210 codec 设备句柄，后续配置都通过该句柄完成。 */
     if (es7210_handle == NULL) {
         es7210_i2c_config_t es7210_i2c_conf = {
@@ -983,23 +971,30 @@ static esp_err_t init_es7210(void)
  */
 void initI2SMics(void)
 {
-    esp_err_t err = init_es7210();
-    if (err != ESP_OK) {
-        printf("init_es7210 failed: %s\n", esp_err_to_name(err));
-        rx_chan = NULL;
-        return;
-    }
-
-    /** @brief 配置 GPIO13 为输出并拉高，保留给板级音频硬件使能使用。 */
+    /** @brief 先拉高板级音频使能引脚，确保 ES7210 上电后才进行 I2C 通信。
+     *
+     * PA_EN 连接 GPIO45（NS4150B 功放使能）。 */
     gpio_config_t pa_conf = {
-        .pin_bit_mask = (1ULL << GPIO_NUM_13),
+        .pin_bit_mask = (1ULL << GPIO_NUM_45),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&pa_conf);
-    gpio_set_level(GPIO_NUM_13, 1);
+    gpio_set_level(GPIO_NUM_45, 1);
+
+    /* 等待 ES7210 电源稳定 */
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    ESP_LOGI(TAG, "PA_EN enabled (GPIO45), initializing ES7210...");
+
+    esp_err_t err = init_es7210();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "init_es7210 failed: %s", esp_err_to_name(err));
+        rx_chan = NULL;
+        return;
+    }
 
     /** @brief I2S 接收通道基础配置，使用 I2S0 主机模式。 */
     i2s_chan_config_t chan_cfg = {
@@ -1071,7 +1066,10 @@ void i2s_read_mics(void)
     int16_t buf[4 * I2S_READ_CHUNK_SAMPLES];
 
     if (rx_chan == NULL) {
-        printf("i2s_read_mics: rx_chan is NULL\n");
+        static uint32_t null_warn = 0;
+        if (null_warn++ % 50 == 0) {
+            ESP_LOGE(TAG, "i2s_read_mics: rx_chan is NULL (init failed?)");
+        }
         return;
     }
 
@@ -1102,6 +1100,18 @@ void i2s_read_mics(void)
             i2s_mic_data[1][dst] = (float)buf[i * 4 + 1] / 32768.0f;
             i2s_mic_data[2][dst] = (float)buf[i * 4 + 2] / 32768.0f;
             i2s_mic_data[3][dst] = (float)buf[i * 4 + 3] / 32768.0f;
+        }
+
+        /** @brief 前 3 帧转储原始 int16 样本，验证 TDM 数据完整性。 */
+        if (chunk == 0) {
+            static int raw_dump_cnt = 0;
+            if (raw_dump_cnt < 3) {
+                raw_dump_cnt++;
+                ESP_LOGI(TAG, "RAW DUMP #%d (first 16 int16 of chunk):", raw_dump_cnt);
+                for (int i = 0; i < 16; i++) {
+                    ESP_LOGI(TAG, "  s[%d]=%d", i, buf[i]);
+                }
+            }
         }
     }
 }

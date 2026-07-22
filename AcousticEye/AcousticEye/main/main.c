@@ -4,9 +4,12 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_log.h"
 
 #include "calc_direction.h"
 #include "ws2812.h"
+
+#define TAG_APP "AcousticEye"
 
 /**
  * @file main.c
@@ -103,44 +106,45 @@ static void audio_task(void *arg)
 {
     (void)arg;
 
+    ESP_LOGI(TAG_APP, "Initializing ES7210 + I2S...");
     initI2SMics();
     prepareWindow(48000.0f);
 
-    /**
-     * @brief 设置声音活动阈值。
-     *
-     * 数值越低越容易触发定位，但环境底噪也更容易进入 GCC-PHAT 计算。
-     * 当前 -2.7f 偏向调试时更容易触发。
-     */
-    setActivityValue(-2.7f);
+    /* 降低活动阈值，提高灵敏度（ES7210 ADC音量已+30dB） */
+    setActivityValue(-4.0f);
 
+    ESP_LOGI(TAG_APP, "Audio pipeline ready, entering main loop");
+
+    /* 启动调试：每 500ms 打印一次 4 通道 RMS */
     uint32_t wsnumber = 0;
     int cnt = 0;
+    uint32_t loop_count = 0;
     while (1) {
         i2s_read_mics();
-       // print_mic_data_500ms();
-        /**
-         * @brief 计算稳定后的声源角度。
-         *
-         * calcAngle() 只在通过响度、峰值、峰值比和角度稳定性检查后返回
-         * 0~360 度角度；否则返回 -1。
-         */
         float angle = calcAngle();
 
-        if (angle >= 0.0f) {
-           // printf("APP angle: %-12s %.1f deg\n", angle_to_dir(angle), angle);
-            printf("angle: %.1f deg\n", angle);
+        /* 详细麦克风数据输出（含原始样本值，每 500ms） */
+        print_mic_data_500ms();
 
-            /**
-             * @brief 将角度映射到 36 颗 LED。
-             *
-             * 每颗 LED 大约表示 10 度方向，超过范围时钳制到最后一颗。
-             */
+        /* 每 500ms 打印一次 4 通道 RMS 和活动量 */
+        if (loop_count % 25 == 0) {
+            float rms[4] = {0};
+            calcRawLevels(rms);
+            calc_debug_info_t info;
+            getCalcDebugInfo(&info);
+            ESP_LOGI(TAG_APP, "rms=[%.5f,%.5f,%.5f,%.5f] act=%.3f angle=%.1f",
+                     rms[0], rms[1], rms[2], rms[3],
+                     info.activity_value, info.angle_final);
+        }
+        loop_count++;
+
+        if (angle >= 0.0f) {
             wsnumber = (uint32_t)(angle / 10.0f) % 36;
             if(wsnumber >= LED_STRIP_LED_COUNT) wsnumber = LED_STRIP_LED_COUNT - 1;
             ws2812_clear();
             ws2812_ctrl(wsnumber, 255, 0, 0);
             ws2812_show();
+            ESP_LOGI(TAG_APP, "LED[%lu] angle=%.1f deg", (unsigned long)wsnumber, angle);
             cnt = 0;
         }
         else{
@@ -152,11 +156,6 @@ static void audio_task(void *arg)
             }
         }
 
-        /**
-         * @brief 主循环刷新周期。
-         *
-         * 20 ms 可获得较快响应；若增大延时，方向显示会更稳定但更容易漏掉短促声音。
-         */
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
