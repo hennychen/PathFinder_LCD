@@ -29,11 +29,11 @@
 #define FRAME_CX         (FRAME_W / 2)
 #define FRAME_CY         (FRAME_H / 2)
 
-#define GAIN_PAN         0.10f
-#define GAIN_TILT        0.08f
-#define DEADBAND         20
-#define MAX_DELTA_PER_FRAME  3
-#define TASK_PERIOD_MS   150
+#define GAIN_PAN         0.15f
+#define GAIN_TILT        0.12f
+#define DEADBAND         15
+#define MAX_DELTA_PER_FRAME  8
+#define TASK_PERIOD_MS   10
 #define TASK_STACK       8192
 #define TASK_PRIO        3
 
@@ -51,8 +51,8 @@ static face_info_t s_last_face = {0};
 
 static void face_tracker_task(void *arg)
 {
-    ESP_LOGI(TAG, "Face tracker task started (ESP-DL MSRMNP, %dx%d, %dHz)",
-             FRAME_W, FRAME_H, 1000 / TASK_PERIOD_MS);
+    ESP_LOGI(TAG, "Face tracker task started (ESP-DL MSRMNP, %dx%d, yield=%dms)",
+             FRAME_W, FRAME_H, TASK_PERIOD_MS);
 
     int lost_count = 0;
 

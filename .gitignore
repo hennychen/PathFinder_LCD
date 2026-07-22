@@ -6,10 +6,7 @@ PathFinder_EMOTE/.cache/
 PathFinder_EMOTE/managed_components/
 PathFinder_EMOTE/dependencies.lock
 
-AcousticEye/AcousticEye/build/
-AcousticEye/AcousticEye/.cache/
-AcousticEye/AcousticEye/managed_components/
-AcousticEye/AcousticEye/dependencies.lock
+AcousticEye/
 
 PathFinder_Tracker/build/
 PathFinder_Tracker/.cache/
@@ -60,3 +57,13 @@ section4_schematic.png
 section5_photos.png
 section_pins_v2.png
 section_schematic_v2.png
+
+# External assets (not source code)
+*.pdf
+64074*
+918*
+emote-assets.bin
+O1CN0*
+微信*
+2.1寸*
+TB1*

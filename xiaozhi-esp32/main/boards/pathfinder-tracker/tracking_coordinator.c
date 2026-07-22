@@ -24,9 +24,9 @@
 #define TAG "Tracker"
 
 /* ── 追踪参数 ── */
-#define TRACK_DEADBAND_DEG      12      /* 死区（°）：变化小于此值不更新，避免环境噪音抖动 */
-#define TRACK_SMOOTH_NUM        3       /* 平滑：每次移动 target/3 → ~3 步到位 */
-#define TRACK_TASK_PERIOD_MS    50      /* 任务周期 = 50ms → 20Hz */
+#define TRACK_DEADBAND_DEG      8       /* 死区（°）：减小以加快响应 */
+#define TRACK_SMOOTH_NUM        1       /* 平滑：单步到位，消除额外延迟 */
+#define TRACK_TASK_PERIOD_MS    30      /* 任务周期 = 30ms → 33Hz */
 #define SOUND_ANGLE_COOLDOWN_MS 800    /* 声源角度更新冷却：800ms 内忽略新的角度变化 */
 
 static track_mode_t s_mode         = TRACK_MODE_IDLE;
