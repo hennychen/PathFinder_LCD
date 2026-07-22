@@ -56,6 +56,9 @@ typedef enum {
     MSG_DIALOG_STATE   = 0x21,  /* 1 byte: 0=idle 1=listening 2=speaking 3=connecting */
     MSG_EMOTION        = 0x22,  /* N bytes ASCII: emotion name (e.g. "happy", "neutral") */
     MSG_CHAT_TEXT      = 0x23,  /* N bytes UTF-8: subtitle text (≤246B per frame) */
+    /* WiFi provisioning (A → B, 转发手机配网指令) */
+    MSG_WIFI_CONFIG    = 0x30,  /* payload: JSON {"ssid":"...","pass":"..."} ≤246B */
+    MSG_WIFI_STATUS    = 0x31,  /* payload: [status(1)][ip_str(N)] 0=connecting 1=connected 2=failed */
 } mesh_msg_type_t;
 
 /* ── Sensor data packet (A-board → B-board, ~72 bytes) ── */

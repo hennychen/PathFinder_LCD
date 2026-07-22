@@ -20,6 +20,7 @@
 
 #include "wifi_board.h"
 #include <esp_netif.h>
+#include <esp_wifi.h>
 #include "codecs/box_audio_codec.h"
 #include "display/display.h"   // NoDisplay
 #include "system_reset.h"
@@ -33,6 +34,7 @@
 #include "wifi_manager.h"
 #include "ssid_manager.h"
 #include "assets/lang_config.h"
+#include "cJSON.h"
 
 /* Mesh + ESP-NOW C headers (wrapped for C++ linkage) */
 extern "C" {
@@ -227,6 +229,42 @@ private:
             /* A板传感器数据（2Hz上报：温湿度/气压/UV/IMU/罗盘） */
             SensorCacheUpdate(msg.payload, msg.payload_len);
             break;
+        case MSG_WIFI_CONFIG: {
+            /* A板转发的 WiFi 配网指令: JSON {"ssid":"...","pass":"..."} */
+            char json_buf[250] = {0};
+            int copy_len = msg.payload_len;
+            if (copy_len >= (int)sizeof(json_buf)) copy_len = sizeof(json_buf) - 1;
+            memcpy(json_buf, msg.payload, copy_len);
+            json_buf[copy_len] = '\0';
+
+            cJSON *root = cJSON_Parse(json_buf);
+            if (root) {
+                cJSON *ssid_item = cJSON_GetObjectItem(root, "ssid");
+                cJSON *pass_item = cJSON_GetObjectItem(root, "pass");
+                if (ssid_item && cJSON_IsString(ssid_item)) {
+                    const char *ssid = ssid_item->valuestring;
+                    const char *pass = (pass_item && cJSON_IsString(pass_item)) ? pass_item->valuestring : "";
+                    ESP_LOGI(TAG, "WiFi config from A-board via ESP-NOW: SSID='%s'", ssid);
+
+                    /* 保存凭据到 SsidManager (NVS 持久化) */
+                    auto& ssid_mgr = SsidManager::GetInstance();
+                    ssid_mgr.AddSsid(ssid, pass);
+
+                    /* 退出 AP 配网模式，触发 TryWifiConnect() */
+                    auto& wifi_mgr = WifiManager::GetInstance();
+                    if (wifi_mgr.IsConfigMode()) {
+                        wifi_mgr.StopConfigAp();
+                    }
+
+                    /* 向 A板回报 'connecting' 状态 */
+                    uint8_t connecting_status = 0;
+                    mesh_espnow_send(ESPNOW_BROADCAST_MAC, MSG_WIFI_STATUS,
+                                     &connecting_status, 1);
+                }
+                cJSON_Delete(root);
+            }
+            break;
+        }
         default:
             ESP_LOGD(TAG, "ESP-NOW RX type=0x%02X len=%d", msg.msg_type, msg.payload_len);
             break;
@@ -298,7 +336,7 @@ private:
         config.pixel_format = PIXFORMAT_RGB565;
         config.frame_size = FRAMESIZE_QVGA;  /* 320x240 — 降低 PSRAM 带宽竞争，避免音频中断 */
         config.jpeg_quality = 12;
-        config.fb_count = 2;
+        config.fb_count = 1;
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
         camera_ = new Esp32Camera(config);
@@ -767,6 +805,13 @@ public:
         servo_init(SERVO_PAN_GPIO, SERVO_TILT_GPIO);
         tracking_init();
         tracking_start_task();
+        // 6b. 人脸追踪开机自启动（延迟 3s 等 WiFi/audio 初始化完成）
+        xTaskCreate([](void *arg) {
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            ESP_LOGI(TAG, "Auto-starting face tracker...");
+            face_tracker_start();
+            vTaskDelete(NULL);
+        }, "face_autostart", 4096, NULL, 3, NULL);
         // 7. 声源角度→舵机联动转发（10Hz 后台任务）
         StartSoundAngleForwarder();
         // 8. 传感器缓存初始化（A板数据 UART1+ESP-NOW 双通道）
@@ -843,12 +888,37 @@ public:
         /* Step 1: 标准WiFi连接（继承 WifiBoard::StartNetwork 的全部逻辑） */
         WifiBoard::StartNetwork();
 
-        /* Step 2: 后台等待 WiFi 连接成功，然后初始化 ESP-NOW + Camera */
+        /* Step 2: 后台任务 — 分两阶段：先启动 ESP-NOW（AP/STA 均可），再等 STA IP */
         xTaskCreate([](void* arg) {
             auto* board = static_cast<PathfinderTrackerBoard*>(arg);
-            ESP_LOGI(TAG, "Waiting for WiFi to connect...");
-            int timeout = 60;
-            while (timeout-- > 0) {
+
+            /* Phase 1: 等待 WiFi 驱动启动（AP 或 STA 模式均可初始化 ESP-NOW） */
+            ESP_LOGI(TAG, "Waiting for WiFi driver to start...");
+            int wifi_start_to = 15;
+            wifi_mode_t cur_mode = WIFI_MODE_NULL;
+            while (wifi_start_to-- > 0) {
+                if (esp_wifi_get_mode(&cur_mode) == ESP_OK &&
+                    cur_mode != WIFI_MODE_NULL) {
+                    break;
+                }
+                vTaskDelay(pdMS_TO_TICKS(1000));
+            }
+
+            if (wifi_start_to <= 0) {
+                ESP_LOGE(TAG, "WiFi driver not started after 15s, aborting");
+                vTaskDelete(NULL);
+                return;
+            }
+
+            /* Phase 2: WiFi 已启动（AP config 或 STA），立即初始化 ESP-NOW */
+            ESP_LOGI(TAG, "WiFi started (mode=%d), initializing ESP-NOW early...", cur_mode);
+            mesh_espnow_init();
+            mesh_espnow_register_rx_cb(OnEspnowRx);
+
+            /* Phase 3: 等待 STA 获取 IP（用于 camera HTTP server） */
+            ESP_LOGI(TAG, "Waiting for WiFi STA to get IP...");
+            int ip_to = 45;
+            while (ip_to-- > 0) {
                 esp_netif_ip_info_t ip_info;
                 esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
                 if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK &&
@@ -858,17 +928,31 @@ public:
                 vTaskDelay(pdMS_TO_TICKS(1000));
             }
 
-            if (timeout > 0) {
-                ESP_LOGI(TAG, "WiFi connected, initializing ESP-NOW...");
-                mesh_espnow_init();
-                mesh_espnow_register_rx_cb(OnEspnowRx);
-
+            if (ip_to > 0) {
+                ESP_LOGI(TAG, "WiFi STA connected, starting camera server...");
                 if (!board->camera_http_started_) {
                     board->camera_http_started_ = true;
                     camera_http_server_start();
                 }
+
+                /* 向 A板回报 B板 IP 地址，用于 App 摄像头预览 */
+                esp_netif_ip_info_t ip_info2;
+                esp_netif_t *netif2 = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+                if (netif2 && esp_netif_get_ip_info(netif2, &ip_info2) == ESP_OK &&
+                    ip_info2.ip.addr != 0) {
+                    char ip_str[16];
+                    snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info2.ip));
+                    ESP_LOGI(TAG, "Reporting B-board IP to A-board: %s", ip_str);
+
+                    uint8_t status_payload[20];
+                    status_payload[0] = 1;  /* 1 = connected */
+                    size_t ip_len = strlen(ip_str);
+                    memcpy(&status_payload[1], ip_str, ip_len);
+                    mesh_espnow_send(ESPNOW_BROADCAST_MAC, MSG_WIFI_STATUS,
+                                     status_payload, 1 + ip_len);
+                }
             } else {
-                ESP_LOGW(TAG, "WiFi connection timeout (60s), ESP-NOW not started");
+                ESP_LOGW(TAG, "WiFi STA IP timeout (45s) — ESP-NOW active in AP mode");
             }
             vTaskDelete(NULL);
         }, "wifi_espnow_init", 4096, this, 2, NULL);

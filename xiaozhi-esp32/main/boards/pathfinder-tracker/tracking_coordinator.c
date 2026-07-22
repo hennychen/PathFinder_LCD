@@ -167,6 +167,9 @@ void tracking_on_face_update(int pan_delta, int tilt_delta)
     if (s_target_pan > SERVO_PAN_SAFE_MAX)   s_target_pan  = SERVO_PAN_SAFE_MAX;
     if (s_target_tilt < SERVO_TILT_SAFE_MIN) s_target_tilt = SERVO_TILT_SAFE_MIN;
     if (s_target_tilt > SERVO_TILT_SAFE_MAX) s_target_tilt = SERVO_TILT_SAFE_MAX;
+
+    ESP_LOGI(TAG, "Face update: panΔ=%d tiltΔ=%d → target pan=%d tilt=%d",
+             pan_delta, tilt_delta, s_target_pan, s_target_tilt);
 }
 
 void tracking_face_lost(void)

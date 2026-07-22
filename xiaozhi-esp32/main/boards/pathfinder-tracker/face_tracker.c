@@ -33,7 +33,8 @@
 #define GAIN_TILT        0.12f
 #define DEADBAND         15
 #define MAX_DELTA_PER_FRAME  8
-#define TASK_PERIOD_MS   10
+#define TASK_PERIOD_FAST_MS  10     /* 有人脸时：10ms yield（全速追踪） */
+#define TASK_PERIOD_IDLE_MS  2000   /* 无人脸时：2秒轮询一次（省 CPU 给 WakeNet） */
 #define TASK_STACK       8192
 #define TASK_PRIO        3
 
@@ -51,21 +52,22 @@ static face_info_t s_last_face = {0};
 
 static void face_tracker_task(void *arg)
 {
-    ESP_LOGI(TAG, "Face tracker task started (ESP-DL MSRMNP, %dx%d, yield=%dms)",
-             FRAME_W, FRAME_H, TASK_PERIOD_MS);
+    ESP_LOGI(TAG, "Face tracker task started (ESP-DL MSRMNP, %dx%d, fast=%dms idle=%dms)",
+             FRAME_W, FRAME_H, TASK_PERIOD_FAST_MS, TASK_PERIOD_IDLE_MS);
 
     int lost_count = 0;
+    int idle_delay = TASK_PERIOD_IDLE_MS;  /* 初始空闲态慢速轮询 */
 
     while (s_running) {
         if (!camera_fb_lock()) {
-            vTaskDelay(pdMS_TO_TICKS(TASK_PERIOD_MS));
+            vTaskDelay(pdMS_TO_TICKS(idle_delay));
             continue;
         }
 
         camera_fb_t *fb = esp_camera_fb_get();
         if (!fb) {
             camera_fb_unlock();
-            vTaskDelay(pdMS_TO_TICKS(TASK_PERIOD_MS));
+            vTaskDelay(pdMS_TO_TICKS(idle_delay));
             continue;
         }
 
@@ -73,7 +75,7 @@ static void face_tracker_task(void *arg)
             fb->width != FRAME_W || fb->height != FRAME_H) {
             esp_camera_fb_return(fb);
             camera_fb_unlock();
-            vTaskDelay(pdMS_TO_TICKS(TASK_PERIOD_MS));
+            vTaskDelay(pdMS_TO_TICKS(idle_delay));
             continue;
         }
 
@@ -132,8 +134,10 @@ static void face_tracker_task(void *arg)
 
             tracking_on_face_update(pan_delta, tilt_delta);
 
-            ESP_LOGD(TAG, "Face score=%.2f at (%d,%d) EMA(%d,%d) dx=%d dy=%d panΔ=%d tiltΔ=%d",
+            ESP_LOGI(TAG, "Face score=%.2f at (%d,%d) EMA(%d,%d) dx=%d dy=%d panΔ=%d tiltΔ=%d",
                      dl_result.score, raw_cx, raw_cy, cx, cy, dx, dy, pan_delta, tilt_delta);
+
+            idle_delay = TASK_PERIOD_FAST_MS;  /* 有人脸：切换到全速追踪 */
         } else {
             s_last_face.detected = false;
             s_last_face.cx = 0;
@@ -146,12 +150,13 @@ static void face_tracker_task(void *arg)
             if (lost_count == 8) {
                 s_ema_init = false;
                 tracking_face_lost();
-                ESP_LOGD(TAG, "Face lost → returning to center");
+                ESP_LOGI(TAG, "No face (lost=%d), switching to idle poll", lost_count);
             }
+            idle_delay = TASK_PERIOD_IDLE_MS;  /* 无人脸：切回空闲慢速 */
         }
 
     next_frame:
-        vTaskDelay(pdMS_TO_TICKS(TASK_PERIOD_MS));
+        vTaskDelay(pdMS_TO_TICKS(idle_delay));
     }
 
     s_task = NULL;
