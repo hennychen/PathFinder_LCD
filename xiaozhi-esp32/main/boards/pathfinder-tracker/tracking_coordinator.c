@@ -26,7 +26,7 @@
 /* ── 追踪参数 ── */
 #define TRACK_DEADBAND_DEG      8       /* 死区（°）：减小以加快响应 */
 #define TRACK_SMOOTH_NUM        1       /* 平滑：单步到位，消除额外延迟 */
-#define TRACK_TASK_PERIOD_MS    30      /* 任务周期 = 30ms → 33Hz */
+#define TRACK_TASK_PERIOD_MS    10      /* 任务周期 = 10ms → 100Hz（快速响应） */
 #define SOUND_ANGLE_COOLDOWN_MS 800    /* 声源角度更新冷却：800ms 内忽略新的角度变化 */
 
 static track_mode_t s_mode         = TRACK_MODE_IDLE;
@@ -168,7 +168,7 @@ void tracking_on_face_update(int pan_delta, int tilt_delta)
     if (s_target_tilt < SERVO_TILT_SAFE_MIN) s_target_tilt = SERVO_TILT_SAFE_MIN;
     if (s_target_tilt > SERVO_TILT_SAFE_MAX) s_target_tilt = SERVO_TILT_SAFE_MAX;
 
-    ESP_LOGI(TAG, "Face update: panΔ=%d tiltΔ=%d → target pan=%d tilt=%d",
+    ESP_LOGD(TAG, "Face: panΔ=%d tiltΔ=%d → P=%d T=%d",
              pan_delta, tilt_delta, s_target_pan, s_target_tilt);
 }
 
@@ -236,5 +236,5 @@ static void tracking_task_fn(void *arg)
 void tracking_start_task(void)
 {
     xTaskCreate(tracking_task_fn, "tracking", 4096, NULL, 4, NULL);
-    ESP_LOGI(TAG, "Tracking task started (20Hz smooth)");
+    ESP_LOGI(TAG, "Tracking task started (%dHz)", 1000 / TRACK_TASK_PERIOD_MS);
 }

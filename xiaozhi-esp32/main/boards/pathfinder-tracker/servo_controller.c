@@ -105,13 +105,10 @@ void servo_set_pan(int angle)
 
 void servo_set_tilt(int angle)
 {
-    /* 收窄到 Tilt 安全范围，避免到达机械极限堵转过热 */
+    /* 收窄到 Tilt 安全范围，避免到达机械极限堵转 */
     angle = clamp_angle_safe(1, angle);
     s_tilt_angle = angle;
-    /* 硬件方向反转：逻辑 0=下/180=上，实际舵机需翻转。
-     * 翻转后的角度同样需要在安全窗口内，这里直接用 clamp 后的 angle
-     * 计算 180-angle，结果落在 [45,135] 内(与 Tilt 安全窗一致)。 */
-    ledc_set_duty(SERVO_SPEED_MODE, TILT_CHANNEL, angle_to_duty(180 - angle));
+    ledc_set_duty(SERVO_SPEED_MODE, TILT_CHANNEL, angle_to_duty(angle));
     ledc_update_duty(SERVO_SPEED_MODE, TILT_CHANNEL);
 }
 

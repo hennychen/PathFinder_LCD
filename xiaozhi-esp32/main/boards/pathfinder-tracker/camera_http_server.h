@@ -13,6 +13,7 @@ extern "C" {
  *   http://<board-ip>:8080/        — HTML preview page
  *   http://<board-ip>:8080/cam      — Single JPEG frame
  *   http://<board-ip>:8080/stream   — MJPEG stream
+ *   http://<board-ip>:8080/face     — POST face detection results (JSON)
  *
  * Must be called AFTER camera init AND AFTER WiFi is connected.
  * Uses esp_camera_fb_get() directly — thread-safe with Esp32Camera::Capture().

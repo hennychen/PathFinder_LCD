@@ -21,6 +21,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include "cJSON.h"
+
 static const char *TAG = "cam_http";
 
 /* ── Capture mutex (shared with Esp32Camera::Capture & face_tracker) ── */
@@ -32,7 +34,7 @@ static bool s_started = false;
 bool camera_fb_lock(void)
 {
     if (!s_cam_mutex) return false;
-    return xSemaphoreTake(s_cam_mutex, pdMS_TO_TICKS(500));
+    return xSemaphoreTake(s_cam_mutex, pdMS_TO_TICKS(100));
 }
 
 void camera_fb_unlock(void)
@@ -87,7 +89,7 @@ static esp_err_t handler_root(httpd_req_t *req)
  * Sets *out_len to JPEG size. */
 static uint8_t *capture_jpeg(size_t *out_len)
 {
-    if (!s_cam_mutex || !xSemaphoreTake(s_cam_mutex, pdMS_TO_TICKS(500))) {
+    if (!s_cam_mutex || !xSemaphoreTake(s_cam_mutex, pdMS_TO_TICKS(100))) {
         return NULL;
     }
 
@@ -161,7 +163,7 @@ static esp_err_t handler_stream(httpd_req_t *req)
             break;
         }
         free(jpg);
-        vTaskDelay(pdMS_TO_TICKS(200));  /* ~5 FPS */
+        vTaskDelay(pdMS_TO_TICKS(200));  /* ~5 FPS, 减少 mutex 占用 */
     }
     return ESP_OK;
 }
@@ -182,7 +184,7 @@ esp_err_t camera_http_server_start(void)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
-    config.max_uri_handlers = 4;
+    config.max_uri_handlers = 8;
     config.stack_size = 8192;
     config.lru_purge_enable = true;
 

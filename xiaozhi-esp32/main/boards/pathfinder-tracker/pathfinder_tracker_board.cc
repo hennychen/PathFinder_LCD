@@ -196,6 +196,7 @@ private:
                 if (!board->camera_http_started_) {
                     board->camera_http_started_ = true;
                     camera_http_server_start();
+                    face_tracker_start();  /* 自动启动本地 ESP-DL 人脸追踪（PID + 流水线） */
                 }
             } else {
                 ESP_LOGW(TAG, "Mesh ROOT connection timeout (60s)");
@@ -336,7 +337,7 @@ private:
         config.pixel_format = PIXFORMAT_RGB565;
         config.frame_size = FRAMESIZE_QVGA;  /* 320x240 — 降低 PSRAM 带宽竞争，避免音频中断 */
         config.jpeg_quality = 12;
-        config.fb_count = 1;
+        config.fb_count = 2;  /* 双缓冲 ping-pong, 匹配流水线架构 */
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
         camera_ = new Esp32Camera(config);
@@ -544,8 +545,9 @@ private:
             "追踪频率约 6.7Hz，丢失目标约 1.2 秒后自动回中。\n",
             PropertyList(),
             [](const PropertyList&) -> ReturnValue {
+                /* 本地 ESP-DL 人脸追踪（PID 控制 + 跨核流水线） */
                 face_tracker_start();
-                return std::string("Face tracking started — servo will follow your face");
+                return std::string("Face tracking started (ESP-DL local — servo will follow your face)");
             }
         );
 
@@ -801,17 +803,11 @@ public:
         sound_localizer_start_task();
         // 5b. WS2812 LED 环形方向指示灯初始化
         led_ring_init();
-        // 6. 舵机云台初始化（LEDC PWM 双通道 MG90S/ES9052）
+        // 6. 舵机云台初始化（LEDC PWM 双通道 MG90S）
         servo_init(SERVO_PAN_GPIO, SERVO_TILT_GPIO);
         tracking_init();
         tracking_start_task();
-        // 6b. 人脸追踪开机自启动（延迟 3s 等 WiFi/audio 初始化完成）
-        xTaskCreate([](void *arg) {
-            vTaskDelay(pdMS_TO_TICKS(3000));
-            ESP_LOGI(TAG, "Auto-starting face tracker...");
-            face_tracker_start();
-            vTaskDelete(NULL);
-        }, "face_autostart", 4096, NULL, 3, NULL);
+        // 6b. 人脸追踪：WiFi 连接后自动启动本地 ESP-DL + PID 追踪
         // 7. 声源角度→舵机联动转发（10Hz 后台任务）
         StartSoundAngleForwarder();
         // 8. 传感器缓存初始化（A板数据 UART1+ESP-NOW 双通道）
@@ -933,6 +929,7 @@ public:
                 if (!board->camera_http_started_) {
                     board->camera_http_started_ = true;
                     camera_http_server_start();
+                    face_tracker_start();  /* 自动启动本地 ESP-DL 人脸追踪（PID + 流水线） */
                 }
 
                 /* 向 A板回报 B板 IP 地址，用于 App 摄像头预览 */

@@ -16,6 +16,7 @@ static const char *TAG = "FaceDetectDL";
 static HumanFaceDetect *s_detector  = nullptr;
 static bool              s_loaded    = false;
 static float             s_score_thr = 0.5f;
+static float             s_nms_thr   = 0.5f;
 
 static face_detect_result_t s_result = {};
 
@@ -34,8 +35,10 @@ static bool ensure_loaded(void)
     s_loaded = true;
     s_detector->set_score_thr(s_score_thr, 0);
     s_detector->set_score_thr(s_score_thr, 1);
+    s_detector->set_nms_thr(s_nms_thr, 0);
+    s_detector->set_nms_thr(s_nms_thr, 1);
 
-    ESP_LOGI(TAG, "MSRMNP_S8_V1 model loaded (score_thr=%.2f)", s_score_thr);
+    ESP_LOGI(TAG, "MSRMNP_S8_V1 model loaded (score_thr=%.2f, nms_thr=%.2f)", s_score_thr, s_nms_thr);
     return true;
 }
 
