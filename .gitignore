@@ -15,6 +15,14 @@ PathFinder_Tracker/sdkconfig
 PathFinder_Tracker/sdkconfig.old
 PathFinder_Tracker/dependencies.lock
 
+# face_tracker_pipeline build artifacts
+face_tracker_pipeline/build/
+face_tracker_pipeline/.cache/
+face_tracker_pipeline/managed_components/
+face_tracker_pipeline/sdkconfig
+face_tracker_pipeline/sdkconfig.old
+face_tracker_pipeline/dependencies.lock
+
 # xiaozhi-esp32 build artifacts
 xiaozhi-esp32/build/
 xiaozhi-esp32/.cache/

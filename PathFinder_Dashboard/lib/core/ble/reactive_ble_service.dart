@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'ble_service_interface.dart';
 import 'ble_uuids.dart';
 import 'ble_wifi_writer.dart';
@@ -26,6 +28,10 @@ class ReactiveBleService implements BleServiceInterface {
   final _compassController = StreamController<CompassSnapshot>.broadcast();
   final _trackerController = StreamController<TrackerSnapshot>.broadcast();
 
+  // WiFi 配网状态流 (B板 ESP-NOW 回报 → A板 BLE C5 Notify)
+  final _wifiStatusController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
   // 扫描结果
   final _scanResults = <DiscoveredDevice>[];
   final _devicesController =
@@ -39,6 +45,7 @@ class ReactiveBleService implements BleServiceInterface {
   StreamSubscription<List<int>>? _emoteSub;
   StreamSubscription<List<int>>? _compassSub;
   StreamSubscription<List<int>>? _trackerSub;
+  StreamSubscription<List<int>>? _wifiNotifySub;
   String? _connectedDeviceId;
 
   QualifiedCharacteristic _envChar(String id) => QualifiedCharacteristic(
@@ -71,6 +78,12 @@ class ReactiveBleService implements BleServiceInterface {
     deviceId: id,
   );
 
+  QualifiedCharacteristic _wifiChar(String id) => QualifiedCharacteristic(
+    characteristicId: c5WifiUuid,
+    serviceId: pfServiceUuid,
+    deviceId: id,
+  );
+
   @override
   BleConnectionState get currentState => _currentState;
 
@@ -94,6 +107,10 @@ class ReactiveBleService implements BleServiceInterface {
 
   @override
   Stream<TrackerSnapshot> subscribeTracker() => _trackerController.stream;
+
+  @override
+  Stream<Map<String, dynamic>> get wifiStatusStream =>
+      _wifiStatusController.stream;
 
   /// 扫描结果流
   Stream<List<DiscoveredDevice>> get devicesStream => _devicesController.stream;
@@ -246,6 +263,29 @@ class ReactiveBleService implements BleServiceInterface {
         );
       } catch (_) {}
     }, onError: (_) {});
+
+    // 订阅 WiFi 配网状态 notify (C5)
+    _wifiNotifySub?.cancel();
+    _wifiNotifySub = _ble.subscribeToCharacteristic(_wifiChar(id)).listen((
+      data,
+    ) {
+      try {
+        final jsonStr = utf8.decode(
+          data is Uint8List ? data : Uint8List.fromList(data),
+        );
+        debugPrint('[BLE] C5 WiFi status notify: $jsonStr');
+        final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+        _wifiStatusController.add(json);
+
+        // B板连接成功且带有 IP → 自动保存为摄像头预览地址
+        if (json['status'] == 'connected' && json['ip'] != null) {
+          final ip = json['ip'] as String;
+          _saveCameraIp(ip);
+        }
+      } catch (e) {
+        debugPrint('[BLE] C5 notify parse error: $e');
+      }
+    }, onError: (_) {});
   }
 
   void _unsubscribeCharacteristics() {
@@ -254,11 +294,13 @@ class ReactiveBleService implements BleServiceInterface {
     _emoteSub?.cancel();
     _compassSub?.cancel();
     _trackerSub?.cancel();
+    _wifiNotifySub?.cancel();
     _envSub = null;
     _motionSub = null;
     _emoteSub = null;
     _compassSub = null;
     _trackerSub = null;
+    _wifiNotifySub = null;
   }
 
   @override
@@ -323,6 +365,14 @@ class ReactiveBleService implements BleServiceInterface {
     _emoteController.close();
     _compassController.close();
     _trackerController.close();
+    _wifiStatusController.close();
     _devicesController.close();
+  }
+
+  /// 自动保存 B板 IP 到 SharedPreferences，供摄像头预览使用
+  Future<void> _saveCameraIp(String ip) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('tracker_cam_ip', ip);
+    debugPrint('[BLE] Camera IP auto-saved: $ip');
   }
 }

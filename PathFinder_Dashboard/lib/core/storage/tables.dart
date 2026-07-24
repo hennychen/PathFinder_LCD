@@ -8,6 +8,8 @@ class EnvRecords extends Table {
   IntColumn get pressure => integer()();
   RealColumn get altitude => real()();
   RealColumn get uvIndex => real()();
+  RealColumn get dustDensity => real().withDefault(const Constant(0.0))();
+  IntColumn get aqiLevel => integer().withDefault(const Constant(0))();
 }
 
 class EventRecords extends Table {

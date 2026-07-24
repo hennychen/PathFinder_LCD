@@ -10,10 +10,12 @@ Future<String> exportEnvToCsv(AppDatabase db) async {
   )..orderBy([(t) => OrderingTerm.asc(t.timestamp)])).get();
 
   final buffer = StringBuffer();
-  buffer.writeln('timestamp,temperature,humidity,pressure,altitude,uvIndex');
+  buffer.writeln(
+    'timestamp,temperature,humidity,pressure,altitude,uvIndex,dustDensity,aqiLevel',
+  );
   for (final r in records) {
     buffer.writeln(
-      '${r.timestamp.toIso8601String()},${r.temperature},${r.humidity},${r.pressure},${r.altitude},${r.uvIndex}',
+      '${r.timestamp.toIso8601String()},${r.temperature},${r.humidity},${r.pressure},${r.altitude},${r.uvIndex},${r.dustDensity},${r.aqiLevel}',
     );
   }
 

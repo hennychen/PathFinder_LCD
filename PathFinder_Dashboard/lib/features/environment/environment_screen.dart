@@ -100,7 +100,7 @@ class EnvironmentScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 10),
-            // ── 第三行：海拔 ──
+            // ── 第三行：海拔 / 粉尘 ──
             Row(
               children: [
                 Expanded(
@@ -113,7 +113,19 @@ class EnvironmentScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Spacer(),
+                Expanded(
+                  child: MetricCard(
+                    value: env.dustDensity,
+                    unit: 'mg/m³',
+                    label: '粉尘 (${env.aqiLabel})',
+                    color: Colors.white,
+                    backgroundColor: _dustColor(
+                      env.aqiLevel,
+                    ).withValues(alpha: 0.15),
+                    decimals: 2,
+                    fontSize: 28,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 28),
@@ -165,6 +177,22 @@ class EnvironmentScreen extends ConsumerWidget {
     if (uv >= 8.0) return AppColors.urgentText;
     if (uv >= 6.0) return AppColors.warningText;
     return AppColors.envText;
+  }
+
+  /// 粉尘 AQI 等级 → 配色
+  /// 0=优(青) 1=良(青) 2=轻度(琥珀) 3=中度(橙红) 4=重度(红)
+  Color _dustColor(int aqi) {
+    switch (aqi) {
+      case 0:
+      case 1:
+        return AppColors.envText;
+      case 2:
+        return AppColors.warningText;
+      case 3:
+        return const Color(0xFFFF8800);
+      default:
+        return AppColors.urgentText;
+    }
   }
 }
 

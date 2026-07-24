@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/face_detection_service.dart';
 
 /// 实时摄像头预览组件。
 ///
@@ -22,13 +24,15 @@ class _CameraPreviewState extends State<CameraPreview> {
   static const String _defaultIp = '192.168.10.184';
   static const int _defaultPort = 8080;
 
-  Timer? _timer;
-  int _tick = 0;
   bool _error = false;
   bool _loading = true;
   int _fpsCount = 0;
   DateTime _fpsStart = DateTime.now();
   double _currentFps = 0;
+
+  FaceDetectionService? _faceService;
+  StreamSubscription<Uint8List>? _frameSub;
+  Uint8List? _frameBytes;
 
   String _ip = _defaultIp;
   final int _port = _defaultPort;
@@ -60,18 +64,26 @@ class _CameraPreviewState extends State<CameraPreview> {
     setState(() {
       _ip = ip;
       _updateBaseUrl();
-      _tick = 0;
+      _frameBytes = null;
       _error = false;
       _loading = true;
     });
   }
 
   void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(milliseconds: 300), (_) {
-      if (mounted) {
+    _frameSub?.cancel();
+    // 启动人脸检测服务（单路拉帧：显示 + ML Kit 检测共用）
+    _faceService?.dispose();
+    _faceService = FaceDetectionService(baseUrl: _baseUrl);
+    _faceService!.start();
+    // 订阅帧流：每次拉到的 JPEG bytes 同时用于显示和检测
+    _frameSub = _faceService!.frameStream.listen(
+      (bytes) {
+        if (!mounted) return;
         setState(() {
-          _tick++;
+          _frameBytes = bytes;
+          _error = false;
+          _loading = false;
           _fpsCount++;
           final elapsed = DateTime.now().difference(_fpsStart).inMilliseconds;
           if (elapsed >= 1000) {
@@ -80,13 +92,23 @@ class _CameraPreviewState extends State<CameraPreview> {
             _fpsStart = DateTime.now();
           }
         });
+      },
+      onError: (_) {
+        if (mounted) setState(() => _error = true);
+      },
+    );
+    // 超时检测：8s 内无帧则显示离线
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted && _frameBytes == null) {
+        setState(() => _error = true);
       }
     });
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _frameSub?.cancel();
+    _faceService?.dispose();
     super.dispose();
   }
 
@@ -153,50 +175,14 @@ class _CameraPreviewState extends State<CameraPreview> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (_tick > 0)
-                Image.network(
-                  '$_baseUrl/cam?t=$_tick',
+              if (_frameBytes != null)
+                Image.memory(
+                  _frameBytes!,
                   fit: BoxFit.contain,
                   gaplessPlayback: true,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) {
-                      if (_error || _loading) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) {
-                            setState(() {
-                              _error = false;
-                              _loading = false;
-                            });
-                          }
-                        });
-                      }
-                      return child;
-                    }
-                    return const ColoredBox(
-                      color: Colors.black,
-                      child: Center(
-                        child: SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white54,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    if (!_error) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) {
-                          setState(() => _error = true);
-                        }
-                      });
-                    }
-                    return _buildErrorView();
-                  },
                 )
+              else if (_error)
+                _buildErrorView()
               else
                 const ColoredBox(
                   color: Colors.black,

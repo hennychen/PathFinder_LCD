@@ -1,0 +1,11 @@
+# ============================================================================
+#  partitions.csv — Face Tracker Pipeline 分区表
+#  ESP32-S3 16MB Flash
+# ============================================================================
+#  Name,    Type, SubType,  Offset,   Size,    Flags
+#  factory  — 主固件 (face_tracker_pipeline + 内嵌 ESP-DL 模型 ~187KB)
+# ============================================================================
+
+nvs,       data, nvs,     ,        0x4000,
+phy_init,  data, phy,     ,        0x1000,
+factory,   app,  factory, ,        0x400000,

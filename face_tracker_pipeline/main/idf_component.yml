@@ -1,0 +1,15 @@
+## idf_component.yml — Face Tracker Pipeline 组件依赖
+## 版本与 xiaozhi-esp32 已验证版本完全对齐 (ESP-IDF v6.0 兼容)
+
+dependencies:
+  ## ESP-DL: Espressif 深度学习推理库 (v3.3.8 已修复 IDF v6.0 兼容性)
+  espressif/esp-dl:
+    version: "~3.3.8"
+
+  ## Human Face Detect: 人脸检测模型 (MSRMNP_S8_V1 INT8, ~187KB)
+  espressif/human_face_detect:
+    version: "~0.5.0"
+
+  ## ESP32 Camera: DVP 摄像头驱动 (OV2640 QVGA RGB565)
+  espressif/esp32-camera:
+    version: "~2.1.7"

@@ -30,6 +30,11 @@ static const char *TAG = "sensor_mgr";
 #define UV_ADC_UNIT       ADC_UNIT_1
 #define UV_ADC_CHANNEL    ADC_CHANNEL_2   /* GPIO3 = ADC1_CH2 (GPIO4/CH3 被 LCD PIN_DATA0 占用) */
 
+/* ── 粉尘传感器 GP2Y1010AU0F 配置 ── */
+#define DUST_ADC_UNIT     ADC_UNIT_1
+#define DUST_ADC_CHANNEL  ADC_CHANNEL_0   /* GPIO1 = ADC1_CH0 (GPIO8 已被 UV 传感器占用) */
+#define DUST_LED_GPIO     GPIO_NUM_39
+
 /* ── 全局状态 ── */
 static env_snapshot_t   s_env_snap;
 static imu_snapshot_t   s_imu_snap;
@@ -115,6 +120,11 @@ static void env_task(void *arg)
         /* UV */
         if (drv_uv_read(&snap.uv) != ESP_OK) {
             ESP_LOGW(TAG, "UV 读取失败");
+        }
+
+        /* 粉尘 */
+        if (drv_dust_read(&snap.dust) != ESP_OK) {
+            ESP_LOGW(TAG, "粉尘传感器读取失败");
         }
 
         snap.timestamp_us = esp_timer_get_time();
@@ -297,6 +307,9 @@ esp_err_t sensor_manager_init(i2c_master_bus_handle_t bus)
 
     ret = drv_uv_init(UV_ADC_UNIT, UV_ADC_CHANNEL);
     if (ret != ESP_OK) ESP_LOGW(TAG, "UV ADC 初始化失败 (跳过)");
+
+    ret = drv_dust_init(DUST_ADC_UNIT, DUST_ADC_CHANNEL, DUST_LED_GPIO);
+    if (ret != ESP_OK) ESP_LOGW(TAG, "粉尘传感器初始化失败 (跳过)");
 
     /* 创建互斥锁 */
     s_env_mux = xSemaphoreCreateMutex();

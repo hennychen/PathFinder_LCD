@@ -4,7 +4,7 @@
  *
  * 服务 UUID: 0000fe00-0000-1000-8000-00805f9b34fb
  * 特征值:
- *   C2 (fe02) 环境数据   20 bytes  notify  @1Hz
+ *   C2 (fe02) 环境数据   20 bytes  notify  @1Hz (含粉尘)
  *   C3 (fe03) 运动数据   8 bytes   notify  @10Hz
  *   C4 (fe04) 表情状态   15 bytes  notify  on-change
  *
@@ -32,10 +32,13 @@ esp_err_t ble_gatt_server_init(void);
  * @param pressure_pa 气压 (Pa)
  * @param alt_x10     海拔 × 10 (m)
  * @param uv_x100     UV指数 × 100
+ * @param dust_x100   粉尘浓度 × 100 (mg/m³)
+ * @param aqi_level   空气质量等级 0~4 (优/良/轻度/中度/重度)
  */
 void ble_gatt_notify_env(int16_t temp_x100, uint16_t humi_x100,
                          uint32_t pressure_pa, int16_t alt_x10,
-                         uint16_t uv_x100);
+                         uint16_t uv_x100,
+                         uint16_t dust_x100, uint8_t aqi_level);
 
 /**
  * @brief 更新运动数据并通知订阅的客户端

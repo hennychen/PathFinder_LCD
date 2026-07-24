@@ -86,6 +86,9 @@ class MockBleService implements BleServiceInterface {
   @override
   Future<void> resetWifiConfig() async {}
 
+  @override
+  Stream<Map<String, dynamic>> get wifiStatusStream => const Stream.empty();
+
   void _startMockData() {
     // Environment data @1Hz
     _envTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -98,6 +101,8 @@ class MockBleService implements BleServiceInterface {
           pressure: 101325 + (sin(_tick / 20.0) * 500).round(),
           altitude: 156.0 + sin(_tick / 15.0) * 10.0,
           uvIndex: max(0, 3.0 + sin(_tick / 5.0) * 4.0),
+          dustDensity: max(0, 0.05 + sin(_tick / 12.0) * 0.15),
+          aqiLevel: (max(0, sin(_tick / 12.0) * 3).toInt()).clamp(0, 4),
         ),
       );
     });

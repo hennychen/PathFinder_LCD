@@ -15,13 +15,12 @@ void main() {
         expect(env.temperature, closeTo(-5.0, 0.01));
       });
 
-      test('decodes max temperature', () {
+      test('decodes zero dust', () {
         final bytes = Uint8List(20);
-        ByteData.sublistView(
-          bytes,
-        ).setInt16(4, 32767, Endian.little); // 327.67°C
         final env = EnvSnapshot.fromBle(bytes);
-        expect(env.temperature, closeTo(327.67, 0.01));
+        expect(env.dustDensity, closeTo(0.0, 0.001));
+        expect(env.aqiLevel, 0);
+        expect(env.aqiLabel, '优');
       });
 
       test('decodes all fields', () {
@@ -32,12 +31,17 @@ void main() {
         bd.setUint32(8, 101325, Endian.little);
         bd.setInt16(12, -150, Endian.little); // -15.0m
         bd.setUint16(14, 800, Endian.little); // UV 8.00
+        bd.setUint16(16, 25, Endian.little); // Dust 0.25 mg/m³
+        bytes[18] = 2; // AQI moderate
         final env = EnvSnapshot.fromBle(bytes);
         expect(env.temperature, closeTo(26.35, 0.01));
         expect(env.humidity, closeTo(58.0, 0.01));
         expect(env.pressure, 101325);
         expect(env.altitude, closeTo(-15.0, 0.1));
         expect(env.uvIndex, closeTo(8.0, 0.01));
+        expect(env.dustDensity, closeTo(0.25, 0.01));
+        expect(env.aqiLevel, 2);
+        expect(env.aqiLabel, '轻度污染');
       });
     });
 

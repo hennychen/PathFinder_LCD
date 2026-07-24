@@ -1,0 +1,60 @@
+# ============================================================================
+#  sdkconfig.defaults — Face Tracker Pipeline 默认配置
+#  ESP32-S3-N16R8 (16MB Flash + 8MB Octal PSRAM)
+# ============================================================================
+#  使用 `idf.py set-target esp32s3` 后，这些默认值自动应用。
+#  可通过 `idf.py menuconfig` 覆盖。
+# ============================================================================
+
+# ── 目标芯片 ──
+CONFIG_IDF_TARGET="esp32s3"
+
+# ── Flash & 分区表 (ESP-IDF v6.0 配置名) ──
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# ── PSRAM (Octal PSRAM 8MB) ──
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MEMTEST=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+# ── FreeRTOS ──
+CONFIG_FREERTOS_HZ=1000
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+
+# ── Camera (esp32-camera) ──
+CONFIG_CAMERA_OV2640=y
+
+# ── ESP-DL ──
+CONFIG_DL_DEQUANTINE_LUT=y
+
+# ── Human Face Detect 默认模型 ──
+CONFIG_DEFAULT_HUMAN_FACE_DETECT_MODEL=0
+
+# ── 日志级别 ──
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+
+# ── CPU 频率 ──
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# ── 任务看门狗 (调试时可关闭) ──
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=y
+
+# ── C++ 异常 (ESP-DL 需要) ──
+CONFIG_COMPILER_CXX_EXCEPTIONS=y
+
+# ── 硬件浮点 (ESP32-S3 必需) ──
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y

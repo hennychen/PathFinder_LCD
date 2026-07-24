@@ -30,4 +30,8 @@ abstract class BleServiceInterface {
   Future<void> writeWifiConfig(String ssid, String password);
   Future<void> queryWifiStatus();
   Future<void> resetWifiConfig();
+
+  /// WiFi 配网状态流（来自 B板 ESP-NOW 回报）
+  /// 收到 {"status":"connected","ip":"192.168.x.x"} 时自动配置摄像头 IP
+  Stream<Map<String, dynamic>> get wifiStatusStream;
 }

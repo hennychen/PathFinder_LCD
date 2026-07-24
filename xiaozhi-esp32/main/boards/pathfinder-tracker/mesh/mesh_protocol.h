@@ -72,6 +72,9 @@ typedef struct {
     float altitude;          /**< m */
     /* UV index */
     float uv_index;          /**< 0-11+ */
+    /* GP2Y1010AU0F — dust */
+    float dust_density;      /**< mg/m³ */
+    uint8_t dust_aqi;        /**< 0~4 (优/良/轻度/中度/重度) */
     /* MPU9250 — accel & gyro */
     float accel[3];          /**< g (x, y, z) */
     float gyro[3];           /**< °/s (x, y, z) */
@@ -80,7 +83,7 @@ typedef struct {
     float heading;           /**< 0-360° */
     float mag[3];            /**< µT (x, y, z) */
     /* validity flags */
-    uint8_t flags;           /**< bit0:AHT20 bit1:BMP280 bit2:UV bit3:IMU bit4:Compass */
+    uint8_t flags;           /**< bit0:AHT20 bit1:BMP280 bit2:UV bit3:IMU bit4:Compass bit5:Dust */
     uint32_t timestamp_ms;   /**< sender uptime (ms) */
 } sensor_packet_t;
 #pragma pack(pop)

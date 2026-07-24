@@ -18,6 +18,8 @@ final envStreamProvider = StreamProvider<EnvSnapshot>((ref) {
       snapshot.pressure,
       snapshot.altitude,
       snapshot.uvIndex,
+      snapshot.dustDensity,
+      snapshot.aqiLevel,
     );
     return snapshot;
   });

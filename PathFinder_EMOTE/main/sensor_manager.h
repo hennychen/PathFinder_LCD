@@ -19,6 +19,7 @@
 #include "drv_hmc5883l.h"
 #include "drv_qmc5883l.h"
 #include "drv_uv_adc.h"
+#include "drv_dust_gp2y.h"
 
 /* ── 数据快照结构 ── */
 
@@ -27,6 +28,7 @@ typedef struct {
     aht20_data_t  aht20;    /**< 温湿度 */
     bmp280_data_t bmp280;   /**< 气压/海拔 */
     uv_data_t     uv;       /**< UV指数 */
+    dust_data_t   dust;     /**< 粉尘浓度 */
     int64_t       timestamp_us;
 } env_snapshot_t;
 

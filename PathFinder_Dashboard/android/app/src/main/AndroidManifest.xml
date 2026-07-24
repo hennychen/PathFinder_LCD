@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <!-- HTTP 明文访问权限 (用于摄像头预览 192.168.4.1) -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- WiFi 扫描权限 -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true"/>
     <application
         android:label="pathfinder_dashboard"

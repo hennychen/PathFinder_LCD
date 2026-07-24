@@ -597,10 +597,11 @@ private:
             "  - 温湿度(AHT20)\n"
             "  - 气压/海拔(BMP280)\n"
             "  - UV紫外线指数\n"
+            "  - 粉尘浓度/AQI(GP2Y1010AU0F)\n"
             "  - 加速度/陀螺仪(MPU9250)\n"
             "  - 罗盘方位角(HMC5883L/QMC5883L)\n"
-            "当用户询问温度、湿度、气压、海拔、紫外线、方位角、加速度、\n"
-            "姿态、环境状况、周围环境等信息时使用此工具。\n"
+            "当用户询问温度、湿度、气压、海拔、紫外线、粉尘、空气质量、\n"
+            "方位角、加速度、姿态、环境状况、周围环境等信息时使用此工具。\n"
             "返回JSON字符串，包含所有传感器数据，age_ms为数据时长(毫秒)。\n",
             PropertyList(),
             [](const PropertyList&) -> ReturnValue {
@@ -610,12 +611,13 @@ private:
                 }
                 int age_ms = (int)((esp_timer_get_time() - s_sensor_last_us) / 1000);
 
-                char json[512];
+                char json[640];
                 snprintf(json, sizeof(json),
                     "{"
                     "\"temperature\":%.1f,\"humidity\":%.1f,"
                     "\"pressure\":%.0f,\"altitude\":%.1f,"
                     "\"uv_index\":%.1f,"
+                    "\"dust_density\":%.3f,\"dust_aqi\":%d,"
                     "\"accel\":[%.2f,%.2f,%.2f],"
                     "\"gyro\":[%.1f,%.1f,%.1f],"
                     "\"imu_temp\":%.1f,"
@@ -626,6 +628,7 @@ private:
                     s.temperature, s.humidity,
                     s.pressure, s.altitude,
                     s.uv_index,
+                    s.dust_density, s.dust_aqi,
                     s.accel[0], s.accel[1], s.accel[2],
                     s.gyro[0], s.gyro[1], s.gyro[2],
                     s.imu_temp,
@@ -636,25 +639,27 @@ private:
             }
         );
 
-        /* 获取环境数据（温湿度/气压/UV） */
+        /* 获取环境数据（温湿度/气压/UV/粉尘） */
         mcp_server.AddTool(
             "self.sensor.get_env",
-            "获取A板环境传感器数据：温度、湿度、气压、海拔、UV指数。\n"
+            "获取A板环境传感器数据：温度、湿度、气压、海拔、UV指数、粉尘浓度/AQI。\n"
             "当用户问 \"现在多少度\"、\"湿度多少\"、\"气压多少\"、\n"
-            "\"海拔多高\"、\"紫外线强不强\" 时使用。\n",
+            "\"海拔多高\"、\"紫外线强不强\"、\"粉尘多少\"、\"空气质量怎么样\" 时使用。\n",
             PropertyList(),
             [](const PropertyList&) -> ReturnValue {
                 sensor_packet_t s;
                 if (!SensorCacheGet(&s)) {
                     return std::string("{\"error\":\"No sensor data\"}");
                 }
-                char json[256];
+                char json[384];
                 snprintf(json, sizeof(json),
                     "{\"temperature\":%.1f,\"humidity\":%.1f,"
                     "\"pressure\":%.0f,\"altitude\":%.1f,"
-                    "\"uv_index\":%.1f}",
+                    "\"uv_index\":%.1f,"
+                    "\"dust_density\":%.3f,\"dust_aqi\":%d}",
                     s.temperature, s.humidity,
-                    s.pressure, s.altitude, s.uv_index);
+                    s.pressure, s.altitude, s.uv_index,
+                    s.dust_density, s.dust_aqi);
                 return std::string(json);
             }
         );

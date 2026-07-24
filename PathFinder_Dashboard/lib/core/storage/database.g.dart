@@ -88,6 +88,30 @@ class $EnvRecordsTable extends EnvRecords
     type: DriftSqlType.double,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _dustDensityMeta = const VerificationMeta(
+    'dustDensity',
+  );
+  @override
+  late final GeneratedColumn<double> dustDensity = GeneratedColumn<double>(
+    'dust_density',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0.0),
+  );
+  static const VerificationMeta _aqiLevelMeta = const VerificationMeta(
+    'aqiLevel',
+  );
+  @override
+  late final GeneratedColumn<int> aqiLevel = GeneratedColumn<int>(
+    'aqi_level',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -97,6 +121,8 @@ class $EnvRecordsTable extends EnvRecords
     pressure,
     altitude,
     uvIndex,
+    dustDensity,
+    aqiLevel,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -164,6 +190,21 @@ class $EnvRecordsTable extends EnvRecords
     } else if (isInserting) {
       context.missing(_uvIndexMeta);
     }
+    if (data.containsKey('dust_density')) {
+      context.handle(
+        _dustDensityMeta,
+        dustDensity.isAcceptableOrUnknown(
+          data['dust_density']!,
+          _dustDensityMeta,
+        ),
+      );
+    }
+    if (data.containsKey('aqi_level')) {
+      context.handle(
+        _aqiLevelMeta,
+        aqiLevel.isAcceptableOrUnknown(data['aqi_level']!, _aqiLevelMeta),
+      );
+    }
     return context;
   }
 
@@ -201,6 +242,14 @@ class $EnvRecordsTable extends EnvRecords
         DriftSqlType.double,
         data['${effectivePrefix}uv_index'],
       )!,
+      dustDensity: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}dust_density'],
+      )!,
+      aqiLevel: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}aqi_level'],
+      )!,
     );
   }
 
@@ -218,6 +267,8 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
   final int pressure;
   final double altitude;
   final double uvIndex;
+  final double dustDensity;
+  final int aqiLevel;
   const EnvRecord({
     required this.id,
     required this.timestamp,
@@ -226,6 +277,8 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
     required this.pressure,
     required this.altitude,
     required this.uvIndex,
+    required this.dustDensity,
+    required this.aqiLevel,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -237,6 +290,8 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
     map['pressure'] = Variable<int>(pressure);
     map['altitude'] = Variable<double>(altitude);
     map['uv_index'] = Variable<double>(uvIndex);
+    map['dust_density'] = Variable<double>(dustDensity);
+    map['aqi_level'] = Variable<int>(aqiLevel);
     return map;
   }
 
@@ -249,6 +304,8 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
       pressure: Value(pressure),
       altitude: Value(altitude),
       uvIndex: Value(uvIndex),
+      dustDensity: Value(dustDensity),
+      aqiLevel: Value(aqiLevel),
     );
   }
 
@@ -265,6 +322,8 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
       pressure: serializer.fromJson<int>(json['pressure']),
       altitude: serializer.fromJson<double>(json['altitude']),
       uvIndex: serializer.fromJson<double>(json['uvIndex']),
+      dustDensity: serializer.fromJson<double>(json['dustDensity']),
+      aqiLevel: serializer.fromJson<int>(json['aqiLevel']),
     );
   }
   @override
@@ -278,6 +337,8 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
       'pressure': serializer.toJson<int>(pressure),
       'altitude': serializer.toJson<double>(altitude),
       'uvIndex': serializer.toJson<double>(uvIndex),
+      'dustDensity': serializer.toJson<double>(dustDensity),
+      'aqiLevel': serializer.toJson<int>(aqiLevel),
     };
   }
 
@@ -289,6 +350,8 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
     int? pressure,
     double? altitude,
     double? uvIndex,
+    double? dustDensity,
+    int? aqiLevel,
   }) => EnvRecord(
     id: id ?? this.id,
     timestamp: timestamp ?? this.timestamp,
@@ -297,6 +360,8 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
     pressure: pressure ?? this.pressure,
     altitude: altitude ?? this.altitude,
     uvIndex: uvIndex ?? this.uvIndex,
+    dustDensity: dustDensity ?? this.dustDensity,
+    aqiLevel: aqiLevel ?? this.aqiLevel,
   );
   EnvRecord copyWithCompanion(EnvRecordsCompanion data) {
     return EnvRecord(
@@ -309,6 +374,10 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
       pressure: data.pressure.present ? data.pressure.value : this.pressure,
       altitude: data.altitude.present ? data.altitude.value : this.altitude,
       uvIndex: data.uvIndex.present ? data.uvIndex.value : this.uvIndex,
+      dustDensity: data.dustDensity.present
+          ? data.dustDensity.value
+          : this.dustDensity,
+      aqiLevel: data.aqiLevel.present ? data.aqiLevel.value : this.aqiLevel,
     );
   }
 
@@ -321,7 +390,9 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
           ..write('humidity: $humidity, ')
           ..write('pressure: $pressure, ')
           ..write('altitude: $altitude, ')
-          ..write('uvIndex: $uvIndex')
+          ..write('uvIndex: $uvIndex, ')
+          ..write('dustDensity: $dustDensity, ')
+          ..write('aqiLevel: $aqiLevel')
           ..write(')'))
         .toString();
   }
@@ -335,6 +406,8 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
     pressure,
     altitude,
     uvIndex,
+    dustDensity,
+    aqiLevel,
   );
   @override
   bool operator ==(Object other) =>
@@ -346,7 +419,9 @@ class EnvRecord extends DataClass implements Insertable<EnvRecord> {
           other.humidity == this.humidity &&
           other.pressure == this.pressure &&
           other.altitude == this.altitude &&
-          other.uvIndex == this.uvIndex);
+          other.uvIndex == this.uvIndex &&
+          other.dustDensity == this.dustDensity &&
+          other.aqiLevel == this.aqiLevel);
 }
 
 class EnvRecordsCompanion extends UpdateCompanion<EnvRecord> {
@@ -357,6 +432,8 @@ class EnvRecordsCompanion extends UpdateCompanion<EnvRecord> {
   final Value<int> pressure;
   final Value<double> altitude;
   final Value<double> uvIndex;
+  final Value<double> dustDensity;
+  final Value<int> aqiLevel;
   const EnvRecordsCompanion({
     this.id = const Value.absent(),
     this.timestamp = const Value.absent(),
@@ -365,6 +442,8 @@ class EnvRecordsCompanion extends UpdateCompanion<EnvRecord> {
     this.pressure = const Value.absent(),
     this.altitude = const Value.absent(),
     this.uvIndex = const Value.absent(),
+    this.dustDensity = const Value.absent(),
+    this.aqiLevel = const Value.absent(),
   });
   EnvRecordsCompanion.insert({
     this.id = const Value.absent(),
@@ -374,6 +453,8 @@ class EnvRecordsCompanion extends UpdateCompanion<EnvRecord> {
     required int pressure,
     required double altitude,
     required double uvIndex,
+    this.dustDensity = const Value.absent(),
+    this.aqiLevel = const Value.absent(),
   }) : timestamp = Value(timestamp),
        temperature = Value(temperature),
        humidity = Value(humidity),
@@ -388,6 +469,8 @@ class EnvRecordsCompanion extends UpdateCompanion<EnvRecord> {
     Expression<int>? pressure,
     Expression<double>? altitude,
     Expression<double>? uvIndex,
+    Expression<double>? dustDensity,
+    Expression<int>? aqiLevel,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -397,6 +480,8 @@ class EnvRecordsCompanion extends UpdateCompanion<EnvRecord> {
       if (pressure != null) 'pressure': pressure,
       if (altitude != null) 'altitude': altitude,
       if (uvIndex != null) 'uv_index': uvIndex,
+      if (dustDensity != null) 'dust_density': dustDensity,
+      if (aqiLevel != null) 'aqi_level': aqiLevel,
     });
   }
 
@@ -408,6 +493,8 @@ class EnvRecordsCompanion extends UpdateCompanion<EnvRecord> {
     Value<int>? pressure,
     Value<double>? altitude,
     Value<double>? uvIndex,
+    Value<double>? dustDensity,
+    Value<int>? aqiLevel,
   }) {
     return EnvRecordsCompanion(
       id: id ?? this.id,
@@ -417,6 +504,8 @@ class EnvRecordsCompanion extends UpdateCompanion<EnvRecord> {
       pressure: pressure ?? this.pressure,
       altitude: altitude ?? this.altitude,
       uvIndex: uvIndex ?? this.uvIndex,
+      dustDensity: dustDensity ?? this.dustDensity,
+      aqiLevel: aqiLevel ?? this.aqiLevel,
     );
   }
 
@@ -444,6 +533,12 @@ class EnvRecordsCompanion extends UpdateCompanion<EnvRecord> {
     if (uvIndex.present) {
       map['uv_index'] = Variable<double>(uvIndex.value);
     }
+    if (dustDensity.present) {
+      map['dust_density'] = Variable<double>(dustDensity.value);
+    }
+    if (aqiLevel.present) {
+      map['aqi_level'] = Variable<int>(aqiLevel.value);
+    }
     return map;
   }
 
@@ -456,7 +551,9 @@ class EnvRecordsCompanion extends UpdateCompanion<EnvRecord> {
           ..write('humidity: $humidity, ')
           ..write('pressure: $pressure, ')
           ..write('altitude: $altitude, ')
-          ..write('uvIndex: $uvIndex')
+          ..write('uvIndex: $uvIndex, ')
+          ..write('dustDensity: $dustDensity, ')
+          ..write('aqiLevel: $aqiLevel')
           ..write(')'))
         .toString();
   }
@@ -1407,6 +1504,8 @@ typedef $$EnvRecordsTableCreateCompanionBuilder =
       required int pressure,
       required double altitude,
       required double uvIndex,
+      Value<double> dustDensity,
+      Value<int> aqiLevel,
     });
 typedef $$EnvRecordsTableUpdateCompanionBuilder =
     EnvRecordsCompanion Function({
@@ -1417,6 +1516,8 @@ typedef $$EnvRecordsTableUpdateCompanionBuilder =
       Value<int> pressure,
       Value<double> altitude,
       Value<double> uvIndex,
+      Value<double> dustDensity,
+      Value<int> aqiLevel,
     });
 
 class $$EnvRecordsTableFilterComposer
@@ -1460,6 +1561,16 @@ class $$EnvRecordsTableFilterComposer
 
   ColumnFilters<double> get uvIndex => $composableBuilder(
     column: $table.uvIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get dustDensity => $composableBuilder(
+    column: $table.dustDensity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get aqiLevel => $composableBuilder(
+    column: $table.aqiLevel,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -1507,6 +1618,16 @@ class $$EnvRecordsTableOrderingComposer
     column: $table.uvIndex,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<double> get dustDensity => $composableBuilder(
+    column: $table.dustDensity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get aqiLevel => $composableBuilder(
+    column: $table.aqiLevel,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$EnvRecordsTableAnnotationComposer
@@ -1540,6 +1661,14 @@ class $$EnvRecordsTableAnnotationComposer
 
   GeneratedColumn<double> get uvIndex =>
       $composableBuilder(column: $table.uvIndex, builder: (column) => column);
+
+  GeneratedColumn<double> get dustDensity => $composableBuilder(
+    column: $table.dustDensity,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get aqiLevel =>
+      $composableBuilder(column: $table.aqiLevel, builder: (column) => column);
 }
 
 class $$EnvRecordsTableTableManager
@@ -1580,6 +1709,8 @@ class $$EnvRecordsTableTableManager
                 Value<int> pressure = const Value.absent(),
                 Value<double> altitude = const Value.absent(),
                 Value<double> uvIndex = const Value.absent(),
+                Value<double> dustDensity = const Value.absent(),
+                Value<int> aqiLevel = const Value.absent(),
               }) => EnvRecordsCompanion(
                 id: id,
                 timestamp: timestamp,
@@ -1588,6 +1719,8 @@ class $$EnvRecordsTableTableManager
                 pressure: pressure,
                 altitude: altitude,
                 uvIndex: uvIndex,
+                dustDensity: dustDensity,
+                aqiLevel: aqiLevel,
               ),
           createCompanionCallback:
               ({
@@ -1598,6 +1731,8 @@ class $$EnvRecordsTableTableManager
                 required int pressure,
                 required double altitude,
                 required double uvIndex,
+                Value<double> dustDensity = const Value.absent(),
+                Value<int> aqiLevel = const Value.absent(),
               }) => EnvRecordsCompanion.insert(
                 id: id,
                 timestamp: timestamp,
@@ -1606,6 +1741,8 @@ class $$EnvRecordsTableTableManager
                 pressure: pressure,
                 altitude: altitude,
                 uvIndex: uvIndex,
+                dustDensity: dustDensity,
+                aqiLevel: aqiLevel,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

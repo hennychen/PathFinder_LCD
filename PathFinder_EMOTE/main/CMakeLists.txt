@@ -11,6 +11,7 @@ idf_component_register(
         "drivers/drv_hmc5883l.c"
         "drivers/drv_qmc5883l.c"
         "drivers/drv_uv_adc.c"
+        "drivers/drv_dust_gp2y.c"
         "sensor_manager.c"
         "motion_engine.c"
         "emote_engine.c"

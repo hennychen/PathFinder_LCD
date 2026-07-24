@@ -22,6 +22,9 @@ dependencies:
   path: ^1.9.1
   permission_handler: ^11.3.1
   shared_preferences: ^2.3.3
+  wifi_scan: ^0.4.1
+  http: ^1.2.2                           # POST 人脸坐标到 ESP32
+  google_mlkit_face_detection: ^0.12.0   # 端侧人脸检测
 
 dev_dependencies:
   flutter_test:

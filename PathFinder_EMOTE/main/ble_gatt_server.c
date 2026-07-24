@@ -3,7 +3,7 @@
  * @brief BLE GATT Server 实现 — 基于 NimBLE 协议栈
  *
  * 二进制数据格式与 Flutter App 解码器严格对齐:
- *   C2 环境 20B: [magic4][temp_i16][humi_u16][press_u32][alt_i16][uv_u16][pad4]
+ *   C2 环境 20B: [magic4][temp_i16][humi_u16][press_u32][alt_i16][uv_u16][dust_u16][aqi_u8][pad_u8]
  *   C3 运动 8B:  [pitch_i16][roll_i16][accel_u16][evt_u8][conf_u8]
  *   C4 表情 15B: [id_u8][len_u8][name..12][trigger_u8]
  */
@@ -411,7 +411,8 @@ static inline void put_u32le(uint8_t *p, uint32_t v)
 
 void ble_gatt_notify_env(int16_t temp_x100, uint16_t humi_x100,
                          uint32_t pressure_pa, int16_t alt_x10,
-                         uint16_t uv_x100)
+                         uint16_t uv_x100,
+                         uint16_t dust_x100, uint8_t aqi_level)
 {
     if (!s_initialized || s_conn_handle == BLE_HS_CONN_HANDLE_NONE)
         return;
@@ -434,7 +435,11 @@ void ble_gatt_notify_env(int16_t temp_x100, uint16_t humi_x100,
     put_u16le(&buf[12], (uint16_t)alt_x10);
     /* [14-15] uv × 100 (uint16 LE) */
     put_u16le(&buf[14], uv_x100);
-    /* [16-19] padding */
+    /* [16-17] dust density × 100 (uint16 LE) */
+    put_u16le(&buf[16], dust_x100);
+    /* [18] aqi_level (uint8) 0~4 */
+    buf[18] = aqi_level;
+    /* [19] reserved */
 
     struct os_mbuf *om = ble_hs_mbuf_from_flat(buf, sizeof(buf));
     if (om) {

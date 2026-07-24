@@ -191,6 +191,16 @@ static sensor_rule_t evaluate_sensors(void)
         return (sensor_rule_t){ "mock_05s", 80, "UV High" };
     }
 
+    /* 2b. 重度粉尘 (>=0.25 mg/m³) → 悲伤 (空气糟糕) */
+    if (has_env && env.dust.density_mgm3 >= 0.25f) {
+        return (sensor_rule_t){ "sad_05s15s", 85, "Dust Severe" };
+    }
+
+    /* 2c. 中度粉尘 (>=0.15 mg/m³) → 叹气 (空气不好) */
+    if (has_env && env.dust.density_mgm3 >= 0.15f) {
+        return (sensor_rule_t){ "sigh_20s_40s", 75, "Dust Moderate" };
+    }
+
     /* 3. 高温 (>=32°C) → 叹气 */
     if (has_env && env.aht20.temperature >= 32.0f) {
         return (sensor_rule_t){ "sigh_20s_40s", 70, "Hot" };

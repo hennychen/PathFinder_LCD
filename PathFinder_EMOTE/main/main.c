@@ -3,7 +3,7 @@
  * @brief PathFinder EMOTE — 480×480 圆形屏 车载智能表情终端
  *
  * 硬件：TK021F2699 (ST7701S RGB LCD + CST3530 触摸 + ESP32-S3)
- * 传感器：AHT20(温湿度) + BMP280(气压) + MPU-9250/6500(姿态) + GUVA-S12SD(UV)
+ * 传感器：AHT20(温湿度) + BMP280(气压) + MPU-9250/6500(姿态) + GUVA-S12SD(UV) + GP2Y1010AU0F(粉尘)
  *
  * UI 布局：极简胶囊式（EAF 优先）
  *   - EAF 表情居中最大化 (330×330)，始终可见
@@ -110,6 +110,14 @@ static int64_t  s_last_face_us = 0;         /* 上次收到人脸数据时间 */
 #define SENSOR_I2C_SDA        (TOUCH_I2C_SDA)
 #define SENSOR_I2C_CLK_HZ     (100000)   /* 降到 100kHz 提升兼容性（上拉较弱时 400kHz 易 NACK） */
 
+/* ===================== 粉尘传感器 GP2Y1010AU0F =====================
+ * DFRobot Gravity 适配器 (SEN0144)，内置 150Ω + 220µF
+ *   LED  → GPIO39  (数字脉冲控制，LOW=点亮 IR LED)
+ *   Vo   → GPIO8   (ADC1_CH7, 模拟电压输出)
+ *   VCC  → 5V
+ *   GND  → GND
+ */
+
 /* ===================== LVGL 配置 ===================== */
 #define LVGL_TICK_PERIOD_MS   2
 #define LVGL_TASK_MAX_DELAY   500
@@ -137,6 +145,7 @@ static int64_t  s_last_face_us = 0;         /* 上次收到人脸数据时间 */
 /* ===================== 异常检测阈值 ===================== */
 #define ALERT_UV_WARNING         8.0f   /* UV 警告阈值 */
 #define ALERT_TILT_WARNING       20.0f  /* 倾角警告阈值 (度) */
+#define ALERT_DUST_WARNING       0.15f  /* 粉尘浓度警告阈值 mg/m³ (中度污染) */
 
 /* ===================== Overlay 状态机 ===================== */
 typedef enum {
@@ -710,14 +719,14 @@ static void detail_show_env(void)
     lv_label_set_text(s_detail_title, "ENVIRONMENT");
     lv_obj_set_style_text_color(s_detail_title, lv_color_hex(0x00B4FF), 0);
 
-    static const char *names[] = {"Temperature", "Humidity", "Pressure", "Altitude", "UV Index", "Sea Level P0"};
-    for (int i = 0; i < 6; i++) {
+    static const char *names[] = {"Temperature", "Humidity", "Pressure", "Altitude", "UV Index", "Sea Level P0", "Dust"};
+    for (int i = 0; i < 7; i++) {
         lv_label_set_text(s_detail_names[i], names[i]);
         lv_obj_clear_flag(s_detail_names[i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_detail_values[i], LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(s_detail_values[i], "--");
     }
-    for (int i = 6; i < DETAIL_MAX_ROWS; i++) {
+    for (int i = 7; i < DETAIL_MAX_ROWS; i++) {
         lv_obj_add_flag(s_detail_names[i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_detail_values[i], LV_OBJ_FLAG_HIDDEN);
     }
@@ -793,6 +802,10 @@ static void detail_update(void)
             bmp280_calib_config_t calib = sensor_manager_get_calib();
             snprintf(buf, sizeof(buf), "%.1f hPa", calib.sea_level_pa / 100.0f);
             lv_label_set_text(s_detail_values[5], buf);
+
+            /* Dust */
+            snprintf(buf, sizeof(buf), "%.2f mg/m³", env.dust.density_mgm3);
+            lv_label_set_text(s_detail_values[6], buf);
         }
     } else if (s_detail_mode == DETAIL_MOTION) {
         float pitch = 0, roll = 0;
@@ -939,9 +952,10 @@ static void overlay_check_alerts(const env_snapshot_t *env, float pitch, float r
 
     /* 检查是否有异常条件 */
     bool uv_warning = (env && env->uv.uv_index >= ALERT_UV_WARNING);
+    bool dust_warning = (env && env->dust.density_mgm3 >= ALERT_DUST_WARNING);
     bool tilt_warning = (tilt_mag >= ALERT_TILT_WARNING);
 
-    if (uv_warning || tilt_warning) {
+    if (uv_warning || dust_warning || tilt_warning) {
         /* 有异常 → 触发警告级别 */
         if (s_overlay_state != OVERLAY_ALERT) {
             overlay_trigger_alert(ALERT_WARNING);
@@ -1177,12 +1191,34 @@ static void handle_tracker_msg(const uint8_t *src_mac, const uint8_t *raw, int r
         }
         break;
 
+       /* B板 WiFi 连接状态 + IP 地址回报 */
+    case MSG_WIFI_STATUS:
+        if (msg.payload_len >= 1) {
+            uint8_t status = msg.payload[0];
+            if (status == 0) {
+                /* B板正在连接 */
+                ble_gatt_notify_wifi_status("{\"status\":\"connecting\"}");
+            } else if (status == 1 && msg.payload_len > 1) {
+                /* B板已连接，后面是 IP 字符串 */
+                char ip[16] = {0};
+                int ip_len = msg.payload_len - 1;
+                if (ip_len > 15) ip_len = 15;
+                memcpy(ip, &msg.payload[1], ip_len);
+                char notify[64];
+                snprintf(notify, sizeof(notify),
+                         "{\"status\":\"connected\",\"ip\":\"%s\"}", ip);
+                ble_gatt_notify_wifi_status(notify);
+                ESP_LOGI(TAG, "B-board WiFi connected, IP: %s", ip);
+            } else if (status == 2) {
+                ble_gatt_notify_wifi_status("{\"status\":\"failed\"}");
+            }
+        }
+        break;
+
     default:
         break;
     }
 }
-
-/* ESP-NOW 接收回调 (在 WiFi 任务上下文中运行) */
 static void on_espnow_rx(const uint8_t *src_mac, const uint8_t *data, int data_len)
 {
     handle_tracker_msg(src_mac, data, data_len);
@@ -1302,6 +1338,18 @@ static void on_ble_wifi_write(const char *json_str)
             const char *ssid = ssid_item->valuestring;
             const char *pass = (pass_item && cJSON_IsString(pass_item)) ? pass_item->valuestring : "";
             wifi_config_manager_set_credentials(ssid, pass);
+
+            /* 转发 WiFi 凭据到 B板 via ESP-NOW */
+            if (mesh_espnow_is_ready()) {
+                char wifi_json[200];
+                snprintf(wifi_json, sizeof(wifi_json),
+                         "{\"ssid\":\"%s\",\"pass\":\"%s\"}", ssid, pass);
+                mesh_espnow_send(ESPNOW_BROADCAST_MAC, MSG_WIFI_CONFIG,
+                                 (const uint8_t*)wifi_json, strlen(wifi_json));
+                ESP_LOGI(TAG, "WiFi config forwarded to B-board via ESP-NOW");
+            } else {
+                ESP_LOGW(TAG, "ESP-NOW not ready, B-board WiFi config not forwarded");
+            }
         }
     } else if (strcmp(cmd->valuestring, "get_status") == 0) {
         char buf[128];
@@ -1423,7 +1471,9 @@ static void ble_notify_task(void *arg)
                 (uint16_t)(env.aht20.humidity * 100),
                 (uint32_t)env.bmp280.pressure,
                 (int16_t)(env.bmp280.altitude * 10),
-                (uint16_t)(env.uv.uv_index * 100)
+                (uint16_t)(env.uv.uv_index * 100),
+                (uint16_t)(env.dust.density_mgm3 * 100),
+                env.dust.aqi_level
             );
         }
 
@@ -1523,9 +1573,12 @@ static void sensor_uplink_task(void *arg)
             pkt.pressure    = env.bmp280.pressure;
             pkt.altitude    = env.bmp280.altitude;
             pkt.uv_index    = env.uv.uv_index;
+            pkt.dust_density = env.dust.density_mgm3;
+            pkt.dust_aqi     = env.dust.aqi_level;
             if (env.aht20.humidity > 0.0f)   pkt.flags |= 0x01;
             if (env.bmp280.pressure > 0.0f)  pkt.flags |= 0x02;
             pkt.flags |= 0x04;
+            pkt.flags |= 0x20;  /* Dust available */
             has_data = true;
         }
 

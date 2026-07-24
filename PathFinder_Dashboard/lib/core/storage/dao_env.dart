@@ -15,6 +15,8 @@ class EnvDao extends DatabaseAccessor<AppDatabase> with _$EnvDaoMixin {
     int pressure,
     double altitude,
     double uvIndex,
+    double dustDensity,
+    int aqiLevel,
   ) {
     return into(envRecords).insert(
       EnvRecordsCompanion.insert(
@@ -24,6 +26,8 @@ class EnvDao extends DatabaseAccessor<AppDatabase> with _$EnvDaoMixin {
         pressure: pressure,
         altitude: altitude,
         uvIndex: uvIndex,
+        dustDensity: Value(dustDensity),
+        aqiLevel: Value(aqiLevel),
       ),
     );
   }
