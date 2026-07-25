@@ -15,7 +15,7 @@ static const char *TAG = "FaceDetectDL";
 
 static HumanFaceDetect *s_detector  = nullptr;
 static bool              s_loaded    = false;
-static float             s_score_thr = 0.5f;
+static float             s_score_thr = 0.3f;  /* 诊断：降低阈值检查模型是否工作 */
 static float             s_nms_thr   = 0.5f;
 
 static face_detect_result_t s_result = {};
@@ -73,7 +73,7 @@ extern "C" bool face_detect_dl_detect(const uint8_t *rgb565_data, int width, int
 
     if (results.empty()) {
         s_result.detected = false;
-        ESP_LOGD(TAG, "No face detected (%lld ms)", (long long)elapsed_ms);
+        ESP_LOGI(TAG, "No face (%lld ms, score_thr=%.2f)", (long long)elapsed_ms, s_score_thr);
         return false;
     }
 
@@ -96,7 +96,7 @@ extern "C" bool face_detect_dl_detect(const uint8_t *rgb565_data, int width, int
     s_result.h        = y2 - y1;
     s_result.score    = best->score;
 
-    ESP_LOGD(TAG, "Face: score=%.2f bbox=[%d,%d,%d,%d] center=(%d,%d) %dx%d (%lld ms)",
+    ESP_LOGI(TAG, "Face: score=%.2f bbox=[%d,%d,%d,%d] center=(%d,%d) %dx%d (%lld ms)",
              best->score, x1, y1, x2, y2,
              s_result.cx, s_result.cy, s_result.w, s_result.h,
              (long long)elapsed_ms);

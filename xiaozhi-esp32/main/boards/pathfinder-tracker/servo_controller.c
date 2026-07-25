@@ -105,11 +105,17 @@ void servo_set_pan(int angle)
 
 void servo_set_tilt(int angle)
 {
-    /* 收窄到 Tilt 安全范围，避免到达机械极限堵转 */
+    /* 收窄到 Tilt 安全范围 [20, 120]，避免到达机械极限堵转 */
     angle = clamp_angle_safe(1, angle);
     s_tilt_angle = angle;
-    ledc_set_duty(SERVO_SPEED_MODE, TILT_CHANNEL, angle_to_duty(angle));
+    /* Tilt 舵机安装方向与逻辑方向相反，需反转 PWM 角度。
+     * 逻辑约定：0°=最下, 90°=居中, 180°=最上
+     * 实际 PWM：大角度 → 舵机向下，所以做 180-angle 翻转 */
+    int pwm_angle = 180 - angle;
+    uint32_t duty = angle_to_duty(pwm_angle);
+    ledc_set_duty(SERVO_SPEED_MODE, TILT_CHANNEL, duty);
     ledc_update_duty(SERVO_SPEED_MODE, TILT_CHANNEL);
+    ESP_LOGI(TAG, "Tilt: logical=%d pwm=%d duty=%d", angle, pwm_angle, duty);
 }
 
 void servo_set_pan_tilt(int pan, int tilt)

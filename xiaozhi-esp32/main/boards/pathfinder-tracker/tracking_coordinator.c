@@ -8,6 +8,7 @@
 
 #include "tracking_coordinator.h"
 #include "servo_controller.h"
+#include "face_tracker.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -68,7 +69,8 @@ static int sound_angle_to_pan(float angle)
 void tracking_init(void)
 {
     /* 上电即进入 AUTO 模式：声源定位激活后 Pan 舵机自动追踪。
-     * 用户仍可通过 MCP 工具 self.servo.set_mode 切换到 manual/idle。 */
+     * 用户仍可通过 MCP 工具 self.servo.set_mode 切换到 manual/idle。
+     * Tilt 初始 90°（居中）。 */
     s_mode         = TRACK_MODE_AUTO;
     s_target_pan   = 90;
     s_target_tilt  = 90;
@@ -123,6 +125,10 @@ void tracking_on_sound_angle(float angle)
 
 void tracking_manual_set_pan(int angle)
 {
+    /* AI 手动控制时，停止人脸追踪释放 CPU（避免与语音识别争夺资源） */
+    if (face_tracker_is_running()) {
+        face_tracker_stop();
+    }
     tracking_set_mode(TRACK_MODE_MANUAL);
     /* 收窄到 Pan 安全范围，防止 MCP/AI 命令到机械极限 */
     if (angle < SERVO_PAN_SAFE_MIN)   angle = SERVO_PAN_SAFE_MIN;
@@ -133,6 +139,10 @@ void tracking_manual_set_pan(int angle)
 
 void tracking_manual_set_tilt(int angle)
 {
+    /* AI 手动控制时，停止人脸追踪释放 CPU（避免与语音识别争夺资源） */
+    if (face_tracker_is_running()) {
+        face_tracker_stop();
+    }
     tracking_set_mode(TRACK_MODE_MANUAL);
     /* 收窄到 Tilt 安全范围，防止 MCP/AI 命令到机械极限 */
     if (angle < SERVO_TILT_SAFE_MIN)   angle = SERVO_TILT_SAFE_MIN;
@@ -143,6 +153,10 @@ void tracking_manual_set_tilt(int angle)
 
 void tracking_manual_set_pan_tilt(int pan, int tilt)
 {
+    /* AI 手动控制时，停止人脸追踪释放 CPU（避免与语音识别争夺资源） */
+    if (face_tracker_is_running()) {
+        face_tracker_stop();
+    }
     tracking_set_mode(TRACK_MODE_MANUAL);
     /* 收窄到各自安全范围，防止 MCP/AI 命令到机械极限 */
     if (pan < SERVO_PAN_SAFE_MIN)   pan = SERVO_PAN_SAFE_MIN;

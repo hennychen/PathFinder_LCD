@@ -26,11 +26,11 @@ extern "C" {
 
 /* 软件安全角度限位（比机械 0-180 更窄）：
  * 防止命令到物理极限导致舵机堵转过热。
- * Pan ±60°，Tilt ±45°（云台机械限位更窄）。 */
+ * Pan ±60°。Tilt 全范围不限位。 */
 #define SERVO_PAN_SAFE_MIN   30
 #define SERVO_PAN_SAFE_MAX   150
-#define SERVO_TILT_SAFE_MIN  45
-#define SERVO_TILT_SAFE_MAX  135
+#define SERVO_TILT_SAFE_MIN  30
+#define SERVO_TILT_SAFE_MAX  120
 
 /**
  * @brief 初始化舵机控制器（LEDC Timer + 双通道）。

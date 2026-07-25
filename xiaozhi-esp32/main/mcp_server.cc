@@ -363,6 +363,7 @@ void McpServer::ParseMessage(const cJSON* json) {
     }
     
     auto method_str = std::string(method->valuestring);
+    ESP_LOGI(TAG, "<<< MCP method: %s", method_str.c_str());
     if (method_str.find("notifications") == 0) {
         return;
     }
@@ -406,7 +407,9 @@ void McpServer::ParseMessage(const cJSON* json) {
                 list_user_only_tools = with_user_tools->valueint == 1;
             }
         }
+        ESP_LOGI(TAG, "tools/list requested (cursor=%s)", cursor_str.empty() ? "none" : cursor_str.c_str());
         GetToolsList(id_int, cursor_str, list_user_only_tools);
+        ESP_LOGI(TAG, "tools/list response sent");
     } else if (method_str == "tools/call") {
         if (!cJSON_IsObject(params)) {
             ESP_LOGE(TAG, "tools/call: Missing params");
@@ -425,6 +428,7 @@ void McpServer::ParseMessage(const cJSON* json) {
             ReplyError(id_int, "Invalid arguments");
             return;
         }
+        ESP_LOGI(TAG, "tools/call: %s", std::string(tool_name->valuestring).c_str());
         DoToolCall(id_int, std::string(tool_name->valuestring), tool_arguments);
     } else {
         ESP_LOGE(TAG, "Method not implemented: %s", method_str.c_str());

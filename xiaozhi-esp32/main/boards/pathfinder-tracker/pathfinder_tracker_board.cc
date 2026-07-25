@@ -196,7 +196,9 @@ private:
                 if (!board->camera_http_started_) {
                     board->camera_http_started_ = true;
                     camera_http_server_start();
-                    face_tracker_start();  /* 自动启动本地 ESP-DL 人脸追踪（PID + 流水线） */
+                    /* face_tracker 不再自动启动：避免 ESP-DL 推理(43ms/帧)
+                     * 持续占用 Core1，干扰小智 AI 语音识别。
+                     * 用户通过语音"开始追踪人脸"→ MCP self.face.start 手动启动。 */
                 }
             } else {
                 ESP_LOGW(TAG, "Mesh ROOT connection timeout (60s)");
@@ -415,33 +417,40 @@ private:
          * - look_at_me：根据声源方向转向
          * 典型场景：用户说"看看左边"→AI调用set_pan→舵机左转 */
 
-        /* 设置 Pan 舵机角度（水平 0=左, 90=中, 180=右） */
+        /* 设置 Pan 舵机角度（水平） */
         mcp_server.AddTool(
             "self.servo.set_pan",
-            "设置云台水平(Pan)舵机角度。角度范围0-180：0=最左,90=居中,180=最右。\n"
-            "当用户要求转头、转向某个方向、看左边/右边时使用。\n"
-            "参数：\n"
-            "   `angle`: Pan角度(0-180)\n",
-            PropertyList({ Property("angle", kPropertyTypeInteger, 0, 180) }),
+            "Control the pan (horizontal rotation) servo of the camera mount. "
+            "Valid angle range: 30-150 degrees (30=leftmost, 90=center, 150=rightmost).\n"
+            "USE THIS TOOL when the user asks to: 转头/转向/看左边/看右边/look left/look right/turn left/turn right/turn head/pan.\n"
+            "Example: user says '看左边' -> call this tool with angle=50.\n"
+            "Args:\n"
+            "  `angle`: Pan angle (30-150), 90=center\n",
+            PropertyList({ Property("angle", kPropertyTypeInteger, 30, 150) }),
             [](const PropertyList& props) -> ReturnValue {
                 int angle = props["angle"].value<int>();
                 tracking_manual_set_pan(angle);
-                return std::string("Pan set to " + std::to_string(angle) + " degrees");
+                int actual = tracking_get_pan();
+                return std::string("Pan set to " + std::to_string(actual) + " degrees");
             }
         );
 
-        /* 设置 Tilt 舵机角度（俯仰 0=下, 90=中, 180=上） */
+        /* 设置 Tilt 舵机角度（俯仰） */
         mcp_server.AddTool(
             "self.servo.set_tilt",
-            "设置云台俯仰(Tilt)舵机角度。角度范围0-180：0=最下,90=居中,180=最上。\n"
-            "当用户要求抬头、低头、看上方/下方时使用。\n"
-            "参数：\n"
-            "   `angle`: Tilt角度(0-180)\n",
-            PropertyList({ Property("angle", kPropertyTypeInteger, 0, 180) }),
+            "Control the tilt (vertical pitch) servo of the camera mount. "
+            "Valid angle range: 30-120 degrees (30=looking down, 90=level/center, 120=looking up).\n"
+            "USE THIS TOOL when the user asks to: 抬头/低头/往上看/往下看/向上看/向下看/look up/look down/tilt up/tilt down/raise head/lower head.\n"
+            "Example: user says '抬头' -> call this tool with angle=115.\n"
+            "Example: user says '低头' -> call this tool with angle=35.\n"
+            "Args:\n"
+            "  `angle`: Tilt angle (30-120), 90=center\n",
+            PropertyList({ Property("angle", kPropertyTypeInteger, 30, 120) }),
             [](const PropertyList& props) -> ReturnValue {
                 int angle = props["angle"].value<int>();
                 tracking_manual_set_tilt(angle);
-                return std::string("Tilt set to " + std::to_string(angle) + " degrees");
+                int actual = tracking_get_tilt();
+                return std::string("Tilt set to " + std::to_string(actual) + " degrees");
             }
         );
 
@@ -934,7 +943,9 @@ public:
                 if (!board->camera_http_started_) {
                     board->camera_http_started_ = true;
                     camera_http_server_start();
-                    face_tracker_start();  /* 自动启动本地 ESP-DL 人脸追踪（PID + 流水线） */
+                    /* face_tracker 不再自动启动：避免 ESP-DL 推理(43ms/帧)
+                     * 持续占用 Core1，干扰小智 AI 语音识别。
+                     * 用户通过语音"开始追踪人脸"→ MCP self.face.start 手动启动。 */
                 }
 
                 /* 向 A板回报 B板 IP 地址，用于 App 摄像头预览 */
