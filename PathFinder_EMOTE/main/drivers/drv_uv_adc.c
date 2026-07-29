@@ -106,6 +106,11 @@ esp_err_t drv_uv_init(adc_unit_t unit, adc_channel_t channel)
     return ESP_OK;
 }
 
+adc_oneshot_unit_handle_t drv_uv_get_adc_handle(void)
+{
+    return s_adc_handle;
+}
+
 esp_err_t drv_uv_read(uv_data_t *out)
 {
     if (s_adc_handle == NULL || out == NULL) return ESP_ERR_INVALID_STATE;

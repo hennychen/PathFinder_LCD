@@ -35,12 +35,12 @@ typedef struct {
 } dust_data_t;
 
 /**
- * @brief 初始化粉尘传感器
- * @param unit     ADC 单元 (必须 ADC_UNIT_1, WiFi 开启时 ADC2 不可用)
- * @param adc_ch   ADC 通道 (ADC_CHANNEL_0 = GPIO1)
- * @param led_gpio LED 脉冲控制引脚 (GPIO_NUM_39)
+ * @brief 初始化粉尘传感器 (共享 ADC1 handle)
+ * @param adc_handle ADC1 oneshot handle (由 sensor_manager 创建，UV 驱动共享)
+ * @param adc_ch     ADC 通道 (ADC_CHANNEL_0 = GPIO1)
+ * @param led_gpio   LED 脉冲控制引脚 (GPIO_NUM_39)
  */
-esp_err_t drv_dust_init(adc_unit_t unit, adc_channel_t adc_ch, gpio_num_t led_gpio);
+esp_err_t drv_dust_init(adc_oneshot_unit_handle_t adc_handle, adc_channel_t adc_ch, gpio_num_t led_gpio);
 
 /**
  * @brief 读取粉尘传感器数据

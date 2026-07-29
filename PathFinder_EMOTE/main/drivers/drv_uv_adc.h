@@ -31,4 +31,9 @@ esp_err_t drv_uv_init(adc_unit_t unit, adc_channel_t channel);
  */
 esp_err_t drv_uv_read(uv_data_t *out);
 
+/**
+ * @brief 获取 ADC1 共享 handle (供其他 ADC1 用户使用)
+ */
+adc_oneshot_unit_handle_t drv_uv_get_adc_handle(void);
+
 #endif /* DRV_UV_ADC_H */

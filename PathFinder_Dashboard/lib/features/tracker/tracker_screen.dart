@@ -8,6 +8,8 @@ import '../../shared/models/tracker_snapshot.dart';
 import 'widgets/sound_radar_chart.dart';
 import 'widgets/face_info_card.dart';
 import 'widgets/camera_preview.dart';
+import 'widgets/tracking_mode_panel.dart';
+import 'widgets/conversation_panel.dart';
 
 class TrackerScreen extends ConsumerWidget {
   const TrackerScreen({super.key});
@@ -90,6 +92,20 @@ class TrackerScreen extends ConsumerWidget {
             valid: tracker.soundValid,
             confidence: tracker.soundConfidence,
           ),
+          if (tracker.soundValid)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Center(
+                child: Text(
+                  SoundDirection.fromAngle(tracker.soundAngle),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.trackerText,
+                  ),
+                ),
+              ),
+            ),
           const SizedBox(height: 28),
           // ── 人脸检测 ──
           const Text(
@@ -100,8 +116,19 @@ class TrackerScreen extends ConsumerWidget {
               color: AppColors.textPrimary,
             ),
           ),
+          const SizedBox(height: 4),
+          const Text(
+            'ESP-DL MSRMNP 神经网络 · PID 双轴云台 · ~6.7Hz',
+            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
           const SizedBox(height: 12),
           FaceInfoCard(tracker: tracker),
+          const SizedBox(height: 28),
+          // ── 追踪模式 ──
+          TrackingModePanel(currentMode: tracker.trackState),
+          const SizedBox(height: 28),
+          // ── 对话同步 ──
+          const ConversationPanel(),
           const SizedBox(height: 16),
           // ── 追踪状态 ──
           _TrackStateBadge(state: tracker.trackState),
@@ -144,16 +171,21 @@ class _TrackStateBadge extends StatelessWidget {
     );
   }
 
+  /// 对应固件 tracking_coordinator.h → track_mode_t 枚举:
+  ///   0 = IDLE   空闲保持当前位置
+  ///   1 = AUTO   自动追踪声源 (GCC-PHAT 驱动 Pan 舵机)
+  ///   2 = FACE   人脸追踪 (ESP-DL 驱动 Pan+Tilt 双轴)
+  ///   3 = MANUAL 手动控制 (AI/MCP 指令驱动)
   String _stateLabel(int s) {
     switch (s) {
       case 0:
-        return '待机';
+        return '空闲待机';
       case 1:
-        return '声源搜索';
+        return '声源自动追踪';
       case 2:
-        return '声源锁定';
-      case 3:
         return '人脸追踪';
+      case 3:
+        return '手动控制';
       default:
         return '未知($s)';
     }
@@ -164,11 +196,11 @@ class _TrackStateBadge extends StatelessWidget {
       case 0:
         return AppColors.textSecondary;
       case 1:
-        return AppColors.warningText;
+        return AppColors.envText; // 青色 — 声源模式
       case 2:
-        return AppColors.motionText;
+        return AppColors.trackerText; // 紫色 — 人脸模式
       case 3:
-        return AppColors.trackerText;
+        return AppColors.warningText; // 琥珀 — 手动模式
       default:
         return AppColors.textSecondary;
     }

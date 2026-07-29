@@ -96,6 +96,8 @@ static lv_obj_t *s_calib_overlay  = NULL;   /* 半透明遮罩 + 进度环容器
 static lv_obj_t *s_calib_arc      = NULL;   /* 进度环 */
 static lv_obj_t *s_calib_hint_lbl = NULL;   /* 状态提示标签 */
 static int64_t   s_calib_done_at  = 0;      /* DONE/FAILED 时间戳 */
+static int64_t   s_calib_start_at = 0;      /* 校准开始时间戳 (超时保护) */
+#define CALIB_TIMEOUT_US       15000000  /* 15s 超时自动取消 */
 
 /* ===================== 前向声明 ===================== */
 static void att_page_click_cb(lv_event_t *e);
@@ -619,6 +621,7 @@ static void create_calib_overlay(void)
     lv_obj_align(s_calib_hint_lbl, LV_ALIGN_CENTER, 0, 60);
 
     s_calib_done_at = 0;
+    s_calib_start_at = esp_timer_get_time();
 }
 
 /* 销毁校准遮罩 */
@@ -631,6 +634,7 @@ static void destroy_calib_overlay(void)
         s_calib_hint_lbl = NULL;
     }
     s_calib_done_at = 0;
+    s_calib_start_at = 0;
 }
 
 /* ===================== 公开 API ===================== */
@@ -791,6 +795,20 @@ void flight_instruments_update(void)
         switch (cs) {
         case MOTION_CALIB_RUNNING:
             lv_arc_set_value(s_calib_arc, pct);
+            /* 超时保护：IMU 无数据或持续超 15s 自动取消 */
+            if (s_calib_start_at > 0 && (now - s_calib_start_at > CALIB_TIMEOUT_US)) {
+                if (s_calib_done_at == 0) {
+                    s_calib_done_at = now;
+                    if (s_calib_hint_lbl) {
+                        lv_label_set_text(s_calib_hint_lbl, "Timeout! No IMU data");
+                        lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_hex(0xFF5050), 0);
+                    }
+                    lv_obj_set_style_arc_color(s_calib_arc, lv_color_hex(0xFF5050), LV_PART_INDICATOR);
+                }
+                if (now - s_calib_done_at > 2000000) {  /* 2s 后自动关闭 */
+                    destroy_calib_overlay();
+                }
+            }
             break;
         case MOTION_CALIB_DONE:
             if (s_calib_done_at == 0) {

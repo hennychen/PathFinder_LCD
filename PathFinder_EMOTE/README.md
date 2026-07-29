@@ -1,4 +1,4 @@
-# PathFinder_EMOTE — 粉尘传感器集成文档
+# PathFinder_EMOTE — 传感器集成与 UI 文档
 
 ## 1. 传感器概述
 
@@ -166,13 +166,17 @@ A板使用 ESP32-S3-WROOM-1-N16R8，GPIO 资源已被 LCD、I2C 传感器等大�
 ### 3.1 Chris Nafis 线性公式
 
 ```
-Vo ≥ 0.6V:  density (mg/m³) = 0.17 × Vo − 0.1
-Vo < 0.6V:  density = 0 (干净空气基线)
+density (mg/m³) = 0.17 × Vo − 0.1
+(负值裁剪到 0)
 ```
 
 参考: http://www.howmuchsnow.com/arduino/airquality/ (Chris Nafis (c) 2012)
 
 > 此公式与 DFRobot 官方 Wiki SEN0144 示例代码中使用的公式完全一致。
+>
+> **变更说明**：原始实现中设有 0.6V 阈值门控（Vo < 0.6V 时直接返回 0），
+> 但在干净空气中传感器输出通常为 0.3~0.5V，导致浓度始终为 0。
+> 现已移除阈值门控，始终计算浓度并裁剪负值到 0。
 
 ### 3.2 AQI 五级映射
 
@@ -209,12 +213,17 @@ typedef struct {
 #### API
 
 ```c
-// 初始化
-esp_err_t drv_dust_init(adc_unit_t unit, adc_channel_t adc_ch, gpio_num_t led_gpio);
+// 初始化 (共享 ADC1 handle，避免与 UV 驱动冲突)
+esp_err_t drv_dust_init(adc_oneshot_unit_handle_t adc_handle,
+                        adc_channel_t adc_ch, gpio_num_t led_gpio);
 
 // 读取数据 (10 次脉冲过采样, ~100ms)
 esp_err_t drv_dust_read(dust_data_t *out);
 ```
+
+> **重要**：ESP-IDF 中每个 ADC 单元只能创建一个 oneshot handle。
+> UV 传感器 (`drv_uv_adc`) 先创建 ADC1 handle，粉尘传感器通过
+> `drv_uv_get_adc_handle()` 获取共享 handle，避免 `ESP_ERR_INVALID_STATE`。
 
 ### 4.2 传感器管理器集成
 
@@ -232,12 +241,12 @@ typedef struct {
 `sensor_manager.c` — 初始化与采样配置：
 
 ```c
-#define DUST_ADC_UNIT     ADC_UNIT_1
 #define DUST_ADC_CHANNEL  ADC_CHANNEL_0   /* GPIO1 = ADC1_CH0 */
 #define DUST_LED_GPIO     GPIO_NUM_39
 
-// 初始化
-drv_dust_init(DUST_ADC_UNIT, DUST_ADC_CHANNEL, DUST_LED_GPIO);
+// 初始化 (UV 驱动先创建 ADC1 handle，粉尘驱动共享)
+drv_uv_init(UV_ADC_UNIT, UV_ADC_CHANNEL);
+drv_dust_init(drv_uv_get_adc_handle(), DUST_ADC_CHANNEL, DUST_LED_GPIO);
 
 // env_task 中 1Hz 读取
 drv_dust_read(&snap.dust);
@@ -245,7 +254,7 @@ drv_dust_read(&snap.dust);
 
 ### 4.3 UI 显示 (环境明细页 DETAIL_ENV)
 
-粉尘数据在环境明细页 **第 7 行** 显示：
+粉尘数据在环境明细页 **第 7 行** 显示，同时显示电压值用于诊断：
 
 ```
 ┌─────────────────────────┐
@@ -257,10 +266,23 @@ drv_dust_read(&snap.dust);
 │  Alt     128.5 m       │
 │  UV      3.2           │
 │  Light   512           │
-│  Dust    0.08 mg/m³    │  ← 第 7 行
+│  Dust    0.08  0.85V   │  ← 浓度 + 电压
 │                         │
 └─────────────────────────┘
 ```
+
+#### 环境明细页字体规范
+
+| 元素 | 字体 | 颜色 |
+|------|------|------|
+| 标题 (ENVIRONMENT) | `montserrat_24` | 蓝色 |
+| 左侧标签 (Temp, Humi 等) | `montserrat_18` | 纯白 |
+| 右侧数值 | `montserrat_24` | 纯白 |
+
+> 电压诊断值可帮助判断传感器状态：
+> - 0.8~1.5V → 传感器正常
+> - 0.0~0.1V → A 引脚未接好
+> - 3.1~3.3V → 引脚悬空或读到 VCC (raw=4095)
 
 ### 4.4 异常告警
 
@@ -270,14 +292,71 @@ drv_dust_read(&snap.dust);
 // 当粉尘浓度 ≥ 0.15 mg/m³ 时触发告警
 ```
 
-### 4.5 表情引擎联动 (emote_engine.c)
+### 4.5 飞行仪表盘校准弹窗
+
+#### 交互流程
+
+```
+表情页 (EAF)
+  │ 短按
+  ▼
+飞行仪表盘 (flight_instruments)
+  │ 长按
+  ▼
+校准确认对话框 (msgbox)
+  │ 点击 Start
+  ▼
+校准进度环 (overlay)
+  │ Done / Failed / Timeout
+  ▼
+自动关闭 → 返回飞行仪表盘
+  │ 短按
+  ▼
+表情页 (EAF)
+```
+
+#### 相关文件
+
+| 文件 | 说明 |
+|------|------|
+| `main/flight_instruments.c` | 仪表盘 UI + 校准弹窗状态机 |
+| `main/motion_engine.c` | IMU 校准算法 (采集静止 bias + NVS 持久化) |
+| `main/motion_engine.h` | 校准状态枚举与 API |
+
+#### 校准状态机
+
+```c
+typedef enum {
+    MOTION_CALIB_IDLE,     // 空闲
+    MOTION_CALIB_RUNNING,  // 正在采集
+    MOTION_CALIB_DONE,     // 成功完成
+    MOTION_CALIB_FAILED,   // 检测到剧烈晃动
+} motion_calib_state_t;
+```
+
+#### 超时保护机制
+
+当 MPU-9250 硬件不可用或 I2C 通信失败时，校准算法无法收到数据帧，
+状态永远停在 `RUNNING`，导致 overlay 永不销毁、用户无法退出仪表盘。
+
+修复方案：在校准开始时记录 `s_calib_start_at` 时间戳，
+`MOTION_CALIB_RUNNING` 分支中检测超时：
+
+| 阶段 | 时长 | 行为 |
+|------|------|------|
+| 超过 15s | 触发超时 | 显示 "Timeout! No IMU data" + 红色进度环 |
+| 再过 2s | 自动销毁 | `destroy_calib_overlay()` 清理状态 |
+
+> 超时后用户可正常短按退出仪表盘。
+
+### 4.6 表情引擎联动 (emote_engine.c)
 
 | 粉尘浓度 | 表情 | 优先级 | 规则名称 |
 |---------|------|--------|---------|
 | ≥ 0.25 mg/m³ | `sad_05s15s` (悲伤) | 85 | Dust Severe |
 | ≥ 0.15 mg/m³ | `sigh_20s_40s` (叹气) | 75 | Dust Moderate |
 
-### 4.6 Mesh 协议传输
+### 4.7 Mesh 协议传输
 
 粉尘数据通过 `sensor_packet_t` 传输到 B板 (PathFinder_Tracker)：
 
@@ -327,15 +406,25 @@ cd PathFinder_EMOTE
 idf.py build
 
 # 烧录到 A板 (需手动按 BOOT+RESET 进入下载模式)
+# 注意：CH343 串口必须使用 stub 模式 (不加 --no-stub)，否则数据会损坏
 python -m esptool --chip esp32s3 -p /dev/cu.wchusbserial5AF61192361 \
-  -b 460800 --no-stub --before default-reset --after hard-reset \
+  -b 115200 --before default-reset --after hard-reset \
   write-flash --flash-mode dio --flash-size 16MB --flash-freq 80m \
   0x0 build/bootloader/bootloader.bin \
   0x8000 build/partition_table/partition-table.bin \
   0x10000 build/pathfinder_emote.bin
+
+# 验证固件完整性 (必做！CH343 数据损坏频发)
+python -m esptool --chip esp32s3 -p /dev/cu.wchusbserial5AF61192361 \
+  -b 115200 verify-flash 0x10000 build/pathfinder_emote.bin
 ```
 
-> **烧录后**：按一次 RESET 键退出下载模式，A板将正常启动。
+> **CH343 烧录注意事项：**
+> 1. **必须使用 stub 模式**：不加 `--no-stub`，stub 提供压缩传输和自动校验
+> 2. **波特率限 115200**：CH343 芯片在高速传输时不稳定，460800 会数据损坏
+> 3. **每次烧录后必须 verify-flash**：`Hash of data verified` 不代表 flash 内容正确
+> 4. 如验证失败：先 `erase-region 0x10000 0x250000` 再重新烧录
+> 5. **烧录后**：按一次 RESET 键退出下载模式
 
 ---
 
@@ -350,3 +439,60 @@ python -m esptool --chip esp32s3 -p /dev/cu.wchusbserial5AF61192361 \
 | 原理图 PDF | DFRobot 中国 | https://www.dfrobot.com.cn/images/upload/File/20131204142145xa068u.pdf |
 | Sharp 应用笔记 | Sharp 官方 | https://global.sharp/products/device/lineup/data/pdf/datasheet/gp2y1010au_appl_e.pdf |
 | Chris Nafis 公式 | 开源社区 | http://www.howmuchsnow.com/arduino/airquality/ |
+
+---
+
+## 8. 变更日志
+
+### 2026-07-23: ADC1 handle 共享 + UI 更新 + 烧录修正
+
+#### Bug 修复
+
+1. **ADC1 handle 冲突**：`drv_dust_init` 和 `drv_uv_init` 都尝试创建 ADC1 oneshot handle，
+   导致粉尘传感器初始化失败 (`ESP_ERR_INVALID_STATE`)，所有读取返回错误。
+   - 修复：粉尘驱动改为接收外部共享 handle，由 `drv_uv_get_adc_handle()` 提供。
+   - 涉及文件：`drv_dust_gp2y.h/c`、`drv_uv_adc.h/c`、`sensor_manager.c`
+
+2. **浓度公式阈值门控**：原实现中 Vo < 0.6V 时浓度直接返回 0，
+   但干净空气 Vo 通常为 0.3~0.5V，导致浓度恒为 0。
+   - 修复：移除 0.6V 阈值，始终计算 `density = 0.17 * Vo - 0.1`，负值裁剪到 0。
+
+#### UI 更新
+
+3. **环境明细页字体统一**：
+   - 标题：`montserrat_20` → `montserrat_24`（与右侧数值一致）
+   - 左侧标签：`montserrat_14` 灰色 → `montserrat_18` 纯白
+   - Dust 行新增电压显示（`0.08  0.85V` 格式），便于硬件诊断
+
+#### 烧录方法修正
+
+4. **CH343 stub 模式**：`--no-stub` 模式下 CH343 数据损坏率极高
+   （`Hash of data verified` 后 `verify-flash` 仍 digest mismatch）。
+   - 修正：移除 `--no-stub`，启用 stub 压缩传输 + 每次烧录后 `verify-flash`。
+   - 波特率：460800 → 115200
+   
+   ---
+   
+   ### 2026-07-23: 校准弹窗字体统一 + 飞行仪表盘超时保护
+   
+   #### UI 更新
+   
+   5. **环境明细页交互控件字体统一**：
+      - CAL 按钮：`montserrat_14` → `montserrat_24` 纯白，尺寸 90×34 → 120×44
+      - `< tap to back`：`montserrat_14` 灰色 → `montserrat_20` 纯白
+      - Adjust 标签：`montserrat_14` → `montserrat_22` 纯白
+      - `-10m` / `+10m` 按钮：新增 `montserrat_20` 纯白
+      - `OK` / `RESET` 按钮：新增 `montserrat_20` 纯白
+      - 海拔显示：`montserrat_20` 蓝色 → `montserrat_22` 纯白
+      - P0 显示：`montserrat_16` 灰色 → `montserrat_18` 纯白
+      - sdkconfig 新增启用 `CONFIG_LV_FONT_MONTSERRAT_22=y`
+   
+   #### Bug 修复
+   
+   6. **飞行仪表盘校准弹窗无法退出**：
+      - 根因：MPU-9250 读取失败 → 校准状态永远停在 `RUNNING` →
+        `s_calib_overlay` 永不销毁 → `att_page_click_cb` 中 `if (s_calib_overlay) return`
+        永远阻止退出。
+      - 修复：在 `MOTION_CALIB_RUNNING` 分支添加 15s 超时保护，
+        显示 "Timeout! No IMU data" 后 2s 自动销毁 overlay。
+      - 涉及文件：`flight_instruments.c`

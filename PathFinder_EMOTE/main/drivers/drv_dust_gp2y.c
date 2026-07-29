@@ -50,7 +50,7 @@ static uint8_t density_to_aqi(float density_mgm3)
     return 4;                              /* 重度污染 */
 }
 
-esp_err_t drv_dust_init(adc_unit_t unit, adc_channel_t adc_ch, gpio_num_t led_gpio)
+esp_err_t drv_dust_init(adc_oneshot_unit_handle_t adc_handle, adc_channel_t adc_ch, gpio_num_t led_gpio)
 {
     if (s_initialized) return ESP_OK;
 
@@ -70,15 +70,12 @@ esp_err_t drv_dust_init(adc_unit_t unit, adc_channel_t adc_ch, gpio_num_t led_gp
     }
     gpio_set_level(led_gpio, 1);  /* 默认熄灭 */
 
-    /* 初始化 ADC 单元 */
-    adc_oneshot_unit_init_cfg_t init_cfg = {
-        .unit_id = unit,
-    };
-    ret = adc_oneshot_new_unit(&init_cfg, &s_adc_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "ADC 单元初始化失败: %s", esp_err_to_name(ret));
-        return ret;
+    /* 使用外部传入的 ADC1 handle (与 UV 传感器共享) */
+    if (adc_handle == NULL) {
+        ESP_LOGE(TAG, "ADC handle 为空，请先初始化 ADC1 单元");
+        return ESP_ERR_INVALID_ARG;
     }
+    s_adc_handle = adc_handle;
 
     /* 配置通道: 12bit, 12dB 衰减 */
     s_adc_channel = adc_ch;
@@ -94,7 +91,7 @@ esp_err_t drv_dust_init(adc_unit_t unit, adc_channel_t adc_ch, gpio_num_t led_gp
 
     /* ADC 校准 (曲线拟合) */
     adc_cali_curve_fitting_config_t cali_cfg = {
-        .unit_id = unit,
+        .unit_id = ADC_UNIT_1,
         .chan = adc_ch,
         .atten = ADC_ATTEN_DB_12,
         .bitwidth = ADC_BITWIDTH_12,
@@ -168,13 +165,11 @@ esp_err_t drv_dust_read(dust_data_t *out)
     }
     out->voltage = (float)voltage_mv / 1000.0f;
 
-    /* 浓度换算 (Chris Nafis 线性公式) */
-    if (out->voltage >= 0.6f) {
-        out->density_mgm3 = 0.17f * out->voltage - 0.1f;
-        if (out->density_mgm3 < 0.0f) out->density_mgm3 = 0.0f;
-    } else {
-        out->density_mgm3 = 0.0f;
-    }
+    /* 浓度换算 (Chris Nafis 线性公式, 降低阈值以适应干净空气)
+     * 原始公式阈值 0.6V，但干净空气 Vo≈0.3-0.5V 会返回 0
+     * 改为始终计算密度，负值裁剪到 0 */
+    out->density_mgm3 = 0.17f * out->voltage - 0.1f;
+    if (out->density_mgm3 < 0.0f) out->density_mgm3 = 0.0f;
 
     /* AQI 等级 */
     out->aqi_level = density_to_aqi(out->density_mgm3);

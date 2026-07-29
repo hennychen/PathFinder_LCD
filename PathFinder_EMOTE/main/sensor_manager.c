@@ -308,7 +308,8 @@ esp_err_t sensor_manager_init(i2c_master_bus_handle_t bus)
     ret = drv_uv_init(UV_ADC_UNIT, UV_ADC_CHANNEL);
     if (ret != ESP_OK) ESP_LOGW(TAG, "UV ADC 初始化失败 (跳过)");
 
-    ret = drv_dust_init(DUST_ADC_UNIT, DUST_ADC_CHANNEL, DUST_LED_GPIO);
+    /* 粉尘传感器共享 UV 驱动的 ADC1 handle，避免重复创建 */
+    ret = drv_dust_init(drv_uv_get_adc_handle(), DUST_ADC_CHANNEL, DUST_LED_GPIO);
     if (ret != ESP_OK) ESP_LOGW(TAG, "粉尘传感器初始化失败 (跳过)");
 
     /* 创建互斥锁 */

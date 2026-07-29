@@ -569,7 +569,7 @@ static void detail_page_create(lv_obj_t *parent)
 
     /* ---- 标题 ---- */
     s_detail_title = lv_label_create(s_detail_scr);
-    lv_obj_set_style_text_font(s_detail_title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(s_detail_title, &lv_font_montserrat_24, 0);
     lv_obj_align(s_detail_title, LV_ALIGN_TOP_MID, 0, DETAIL_TITLE_Y);
 
     /* ---- 分隔线 ---- */
@@ -585,13 +585,13 @@ static void detail_page_create(lv_obj_t *parent)
     lv_obj_set_style_pad_all(sep, 0, 0);
 
     /* ---- 数据行（左名称 + 右数值） ---- */
-    /* 名称：montserrat_14 小号灰色；数值：montserrat_24 大号纯白 */
+    /* 名称：montserrat_18 亮灰色；数值：montserrat_24 大号纯白 */
     for (int i = 0; i < DETAIL_MAX_ROWS; i++) {
         s_detail_names[i] = lv_label_create(s_detail_scr);
-        lv_obj_set_style_text_font(s_detail_names[i], &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(s_detail_names[i], lv_color_hex(0x888899), 0);
+        lv_obj_set_style_text_font(s_detail_names[i], &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_color(s_detail_names[i], lv_color_white(), 0);
         lv_obj_align(s_detail_names[i], LV_ALIGN_TOP_LEFT, DETAIL_NAME_X,
-                      DETAIL_ROW_START_Y + i * DETAIL_ROW_H + 6);
+                      DETAIL_ROW_START_Y + i * DETAIL_ROW_H + 4);
 
         s_detail_values[i] = lv_label_create(s_detail_scr);
         lv_obj_set_style_text_font(s_detail_values[i], &lv_font_montserrat_24, 0);
@@ -602,8 +602,8 @@ static void detail_page_create(lv_obj_t *parent)
 
     /* ---- 返回提示 ---- */
     s_detail_back = lv_label_create(s_detail_scr);
-    lv_obj_set_style_text_font(s_detail_back, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_detail_back, lv_color_hex(0x555566), 0);
+    lv_obj_set_style_text_font(s_detail_back, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s_detail_back, lv_color_white(), 0);
     lv_label_set_text(s_detail_back, "< tap to back");
     lv_obj_align(s_detail_back, LV_ALIGN_BOTTOM_MID, 0, -25);
 
@@ -611,7 +611,7 @@ static void detail_page_create(lv_obj_t *parent)
 
     /* 校准 CAL 胶囊按钮 (EMA 蓝色胶囊风格) */
     s_calib_hint = lv_obj_create(s_detail_scr);
-    lv_obj_set_size(s_calib_hint, 90, 34);
+    lv_obj_set_size(s_calib_hint, 120, 44);
     lv_obj_align(s_calib_hint, LV_ALIGN_BOTTOM_MID, 0, -60);
     lv_obj_clear_flag(s_calib_hint, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_calib_hint, LV_OBJ_FLAG_CLICKABLE);
@@ -629,7 +629,7 @@ static void detail_page_create(lv_obj_t *parent)
     lv_obj_add_event_cb(s_calib_hint, calib_enter_cb, LV_EVENT_CLICKED, NULL);
     /* 胶囊内部标签 */
     s_calib_hint_lbl = lv_label_create(s_calib_hint);
-    lv_obj_set_style_text_font(s_calib_hint_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(s_calib_hint_lbl, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_white(), 0);
     lv_obj_set_style_text_opa(s_calib_hint_lbl, LV_OPA_COVER, 0);
     lv_label_set_text(s_calib_hint_lbl, "CAL");
@@ -637,15 +637,15 @@ static void detail_page_create(lv_obj_t *parent)
 
     /* 海拔显示 */
     s_calib_lbl_alt = lv_label_create(s_detail_scr);
-    lv_obj_set_style_text_font(s_calib_lbl_alt, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(s_calib_lbl_alt, lv_color_hex(0x00B4FF), 0);
+    lv_obj_set_style_text_font(s_calib_lbl_alt, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(s_calib_lbl_alt, lv_color_white(), 0);
     lv_obj_align(s_calib_lbl_alt, LV_ALIGN_CENTER, 0, -30);
     lv_obj_add_flag(s_calib_lbl_alt, LV_OBJ_FLAG_HIDDEN);
 
     /* P0 反推显示 */
     s_calib_lbl_p0 = lv_label_create(s_detail_scr);
-    lv_obj_set_style_text_font(s_calib_lbl_p0, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(s_calib_lbl_p0, lv_color_hex(0xAAAAAA), 0);
+    lv_obj_set_style_text_font(s_calib_lbl_p0, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(s_calib_lbl_p0, lv_color_white(), 0);
     lv_obj_align(s_calib_lbl_p0, LV_ALIGN_CENTER, 0, 10);
     lv_obj_add_flag(s_calib_lbl_p0, LV_OBJ_FLAG_HIDDEN);
 
@@ -659,6 +659,8 @@ static void detail_page_create(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_calib_btn_minus, 0, 0);
     lv_obj_t *lbl_minus = lv_label_create(s_calib_btn_minus);
     lv_label_set_text(lbl_minus, "-10m");
+    lv_obj_set_style_text_font(lbl_minus, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lbl_minus, lv_color_white(), 0);
     lv_obj_center(lbl_minus);
     lv_obj_add_event_cb(s_calib_btn_minus, calib_minus_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(s_calib_btn_minus, LV_OBJ_FLAG_HIDDEN);
@@ -673,6 +675,8 @@ static void detail_page_create(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_calib_btn_plus, 0, 0);
     lv_obj_t *lbl_plus = lv_label_create(s_calib_btn_plus);
     lv_label_set_text(lbl_plus, "+10m");
+    lv_obj_set_style_text_font(lbl_plus, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lbl_plus, lv_color_white(), 0);
     lv_obj_center(lbl_plus);
     lv_obj_add_event_cb(s_calib_btn_plus, calib_plus_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(s_calib_btn_plus, LV_OBJ_FLAG_HIDDEN);
@@ -687,7 +691,8 @@ static void detail_page_create(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_calib_btn_ok, 0, 0);
     lv_obj_t *lbl_ok = lv_label_create(s_calib_btn_ok);
     lv_label_set_text(lbl_ok, "OK");
-    lv_obj_set_style_text_color(lbl_ok, lv_color_black(), 0);
+    lv_obj_set_style_text_font(lbl_ok, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lbl_ok, lv_color_white(), 0);
     lv_obj_center(lbl_ok);
     lv_obj_add_event_cb(s_calib_btn_ok, calib_ok_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(s_calib_btn_ok, LV_OBJ_FLAG_HIDDEN);
@@ -702,6 +707,8 @@ static void detail_page_create(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_calib_btn_reset, 0, 0);
     lv_obj_t *lbl_reset = lv_label_create(s_calib_btn_reset);
     lv_label_set_text(lbl_reset, "RESET");
+    lv_obj_set_style_text_font(lbl_reset, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lbl_reset, lv_color_white(), 0);
     lv_obj_center(lbl_reset);
     lv_obj_add_event_cb(s_calib_btn_reset, calib_reset_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(s_calib_btn_reset, LV_OBJ_FLAG_HIDDEN);
@@ -803,8 +810,8 @@ static void detail_update(void)
             snprintf(buf, sizeof(buf), "%.1f hPa", calib.sea_level_pa / 100.0f);
             lv_label_set_text(s_detail_values[5], buf);
 
-            /* Dust */
-            snprintf(buf, sizeof(buf), "%.2f mg/m³", env.dust.density_mgm3);
+            /* Dust: 显示浓度+电压，便于诊断 */
+            snprintf(buf, sizeof(buf), "%.2f  %.2fV", env.dust.density_mgm3, env.dust.voltage);
             lv_label_set_text(s_detail_values[6], buf);
         }
     } else if (s_detail_mode == DETAIL_MOTION) {
@@ -936,7 +943,8 @@ static void calib_enter_cb(lv_event_t *e)
     lv_obj_clear_flag(s_calib_lbl_alt, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_calib_lbl_p0, LV_OBJ_FLAG_HIDDEN);
     lv_label_set_text(s_calib_hint_lbl, "Adjust");
-    lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_hex(0x00B4FF), 0);
+    lv_obj_set_style_text_font(s_calib_hint_lbl, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(s_calib_hint_lbl, lv_color_white(), 0);
     calib_update_display();
 }
 
