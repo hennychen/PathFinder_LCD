@@ -50,6 +50,18 @@ void emote_engine_manual_next(void);
 const char *emote_engine_get_current_name(void);
 
 /**
+ * @brief 暂停 EAF 动画播放（必须在 LVGL 线程中调用）
+ *        仪表页等全屏覆盖层打开时调用，停止后台 JPEG 解码与
+ *        lv_obj_invalidate，避免被遮挡的表情动画持续触发全屏重绘
+ */
+void emote_engine_pause(void);
+
+/**
+ * @brief 恢复 EAF 动画播放（必须在 LVGL 线程中调用）
+ */
+void emote_engine_resume(void);
+
+/**
  * @brief 对话状态触发（必须在 LVGL 线程中调用）
  *        覆盖传感器评估 5 秒，对话状态优先
  * @param state 0=idle 1=listening 2=speaking 3=connecting

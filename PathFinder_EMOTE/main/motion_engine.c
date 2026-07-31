@@ -26,8 +26,10 @@ static const char *TAG = "motion";
 #define WINDOW_SIZE       25      /* 滑动窗口帧数 */
 #define SAMPLE_PERIOD_MS  40      /* 25Hz 采样周期 */
 
-/* ── 低通滤波系数 (EMA: α越小越平滑) ── */
-#define FILTER_ALPHA      0.15f
+/* ── 低通滤波系数 (EMA: α越小越平滑) ──
+ * 0.15 → 0.35：25Hz 采样下时间常数约 270ms → 115ms，消除仪表盘姿态“漂滞”感；
+ * 事件检测侧已有迟滞阈值 + 3帧防抖保护，噪声敏感度提升可控 */
+#define FILTER_ALPHA      0.35f
 
 /* ── 事件输出稳定：新事件需连续 N 帧才输出 ── */
 #define EVENT_STABLE_FRAMES  3   /* 连续 3 帧 (~120ms) 才确认事件切换 */

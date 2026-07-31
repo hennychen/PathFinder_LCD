@@ -18,6 +18,7 @@
 #include "lvgl.h"
 #include "sensor_manager.h"
 #include "motion_engine.h"
+#include "emote_engine.h"
 #include "flight_instruments.h"
 
 static const char *TAG = "flight_inst";
@@ -32,15 +33,16 @@ static const char *TAG = "flight_inst";
 
 #define FI_UPDATE_PERIOD_US    50000     /* 20Hz (50ms) */
 #define FI_ENV_PERIOD_US       1000000   /* 1Hz */
-#define FI_RENDER_THRESHOLD    0.3f      /* 角度变化阈值，低于此值跳过渲染 */
+#define FI_RENDER_THRESHOLD    0.1f      /* 角度变化阈值，低于此值跳过渲染 */
 
-#define FI_PITCH_SCALE         3         /* px/度 (canvas 内) */
+#define FI_PITCH_SCALE         3         /* px/度 (逻辑坐标内) */
 #define FI_PITCH_MAX           45.0f     /* 俯仰钳制范围 (±45°) */
 #define FI_ROLL_MAX            60.0f     /* 横滚钳制范围 (±60°) */
 
 #define FI_HORIZON_SIZE        520
 #define FI_CLIP_SIZE           400
-#define FI_CANVAS_SIZE         200       /* 姿态画布尺寸 (200x200, 2x zoom 显示为 400x400) */
+#define FI_CANVAS_SIZE         200       /* 姿态逻辑分辨率 (200x200，像素倍增写入 400x400 画布) */
+#define FI_CANVAS_DISP         400       /* 画布实际尺寸 (400x400，免 LVGL zoom 变换) */
 
 #define FI_ROLL_ARC_RADIUS     185       /* 横滚刻度标签半径 */
 
@@ -189,7 +191,8 @@ static void compass_face_update(int16_t heading)
 /* ===================== 画布渲染：姿态指引仪 ===================== */
 
 /* 像素级绘制天空/大地/地平线/俯仰刻度，绕过 LVGL transform_angle + clip_corner 缺陷
- * 优化：memset预填充黑色 + 行裁剪跳过圆外像素 + 预计算 + 增量跳过 */
+ * 优化：逻辑 200x200 计算 + 2x 像素倍增直写 400x400 画布（免 LVGL zoom 插值变换）
+ *       + 行缓冲聚合 PSRAM 顺序写 + 圆外黑边仅首帧清除 + 增量跳过 */
 static void render_horizon_canvas(float pitch, float roll)
 {
     if (!s_canvas_buf) return;
@@ -208,20 +211,28 @@ static void render_horizon_canvas(float pitch, float roll)
     float sin_r = sinf(roll_rad);
 
     const int size = FI_CANVAS_SIZE;
+    const int disp = FI_CANVAS_DISP;
     const int half = size / 2;             /* 100 */
     const int radius   = half;
     const int radius_sq = radius * radius;
     const float pitch_off = pitch * FI_PITCH_SCALE;
     const float cy = (float)half + pitch_off;
 
-    /* 俯仰刻度 sd 值 (canvas 像素，sd>0=天空/仰角) */
+    /* 俯仰刻度 sd 值 (逻辑像素，sd>0=天空/仰角) */
     static const int tick_sd[] = {30, -30, 60, -60, 90, -90};
-    const int tick_half_w = 22;  /* 刻度线半宽 (canvas px) */
+    const int tick_half_w = 22;  /* 刻度线半宽 (逻辑 px) */
 
     lv_color_t *buf = s_canvas_buf;
 
-    /* memset 预填充全黑 (RGB565 黑色 = 0x0000) */
-    memset(buf, 0, size * size * sizeof(lv_color_t));
+    /* 圆外黑边静态不变，仅首帧清除一次 (RGB565 黑色 = 0x0000) */
+    static bool s_canvas_cleared = false;
+    if (!s_canvas_cleared) {
+        memset(buf, 0, disp * disp * sizeof(lv_color_t));
+        s_canvas_cleared = true;
+    }
+
+    /* 行缓冲 (内部 SRAM 栈上)：先水平倍增拼好一行，再整段 memcpy 到两行 PSRAM */
+    lv_color_t line[FI_CANVAS_DISP];
 
     /* 仅渲染圆内像素，逐行计算水平边界 */
     for (int y = 0; y < size; y++) {
@@ -239,40 +250,49 @@ static void render_horizon_canvas(float pitch, float roll)
         float dy_h = (float)y - cy;
         float cos_r_dy_h = cos_r * dy_h;   /* 预计算：内循环少一次乘法 */
 
-        int row_base = y * size;
         for (int x = x_start; x <= x_end; x++) {
             int dx = x - half;
-            int idx = row_base + x;
 
             /* 带符号距离: sd>0 → 天空, sd<0 → 大地 */
             float sd = (float)dx * sin_r - cos_r_dy_h;
 
+            lv_color_t c;
             /* 地平线 (~2px 宽) */
             if (fabsf(sd) <= 1.0f) {
-                buf[idx] = lv_color_white();
-                continue;
-            }
-
-            /* 俯仰刻度线 */
-            bool is_tick = false;
-            float td = (float)dx * cos_r + dy_h * sin_r;
-            if (fabsf(td) <= tick_half_w) {
-                for (int t = 0; t < 6; t++) {
-                    if (fabsf(sd - (float)tick_sd[t]) <= 1.0f) {
-                        is_tick = true;
-                        break;
+                c = lv_color_white();
+            } else {
+                /* 俯仰刻度线 */
+                bool is_tick = false;
+                float td = (float)dx * cos_r + dy_h * sin_r;
+                if (fabsf(td) <= tick_half_w) {
+                    for (int t = 0; t < 6; t++) {
+                        if (fabsf(sd - (float)tick_sd[t]) <= 1.0f) {
+                            is_tick = true;
+                            break;
+                        }
                     }
+                }
+
+                if (is_tick) {
+                    c = lv_color_white();
+                } else if (sd > 0) {
+                    c = COLOR_SKY;
+                } else {
+                    c = COLOR_GROUND;
                 }
             }
 
-            if (is_tick) {
-                buf[idx] = lv_color_white();
-            } else if (sd > 0) {
-                buf[idx] = COLOR_SKY;
-            } else {
-                buf[idx] = COLOR_GROUND;
-            }
+            /* 水平 2x 倍增写入行缓冲 */
+            line[x * 2]     = c;
+            line[x * 2 + 1] = c;
         }
+
+        /* 垂直 2x 倍增：同一行数据 memcpy 到两行 PSRAM (仅圆内段) */
+        int seg_x   = x_start * 2;
+        int seg_len = (x_end - x_start + 1) * 2;
+        lv_color_t *dst = buf + (y * 2) * disp + seg_x;
+        memcpy(dst,        &line[seg_x], seg_len * sizeof(lv_color_t));
+        memcpy(dst + disp, &line[seg_x], seg_len * sizeof(lv_color_t));
     }
     lv_obj_invalidate(s_canvas);
 }
@@ -293,16 +313,15 @@ static void create_attitude_page(lv_obj_t *parent)
     /* ---- 姿态画布 (替代 clip+transform_angle, 像素级渲染) ---- */
     s_canvas = lv_canvas_create(s_page_att);
     lv_obj_center(s_canvas);
-    /* 分配 PSRAM 缓冲区: 200x200 RGB565 = 80KB */
+    /* 分配 PSRAM 缓冲区: 400x400 RGB565 = 320KB (原生尺寸，免 LVGL zoom 变换) */
     if (!s_canvas_buf) {
-        s_canvas_buf = heap_caps_malloc(FI_CANVAS_SIZE * FI_CANVAS_SIZE * sizeof(lv_color_t),
+        s_canvas_buf = heap_caps_malloc(FI_CANVAS_DISP * FI_CANVAS_DISP * sizeof(lv_color_t),
                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (!s_canvas_buf) {
             ESP_LOGE(TAG, "canvas buffer alloc failed");
         }
     }
-    lv_canvas_set_buffer(s_canvas, s_canvas_buf, FI_CANVAS_SIZE, FI_CANVAS_SIZE, LV_IMG_CF_TRUE_COLOR);
-    lv_img_set_zoom(s_canvas, 512);  /* 2x zoom: 200→400 显示尺寸 */
+    lv_canvas_set_buffer(s_canvas, s_canvas_buf, FI_CANVAS_DISP, FI_CANVAS_DISP, LV_IMG_CF_TRUE_COLOR);
     lv_obj_clear_flag(s_canvas, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     render_horizon_canvas(0.0f, 0.0f);  /* 初始渲染 */
 
@@ -666,6 +685,8 @@ void flight_instruments_show(void)
 {
     if (!s_overlay) return;
     s_visible = true;
+    /* 暂停后台 EAF 表情动画：停止 JPEG 解码 + 遮挡区 invalidate 引发的全屏重绘 */
+    emote_engine_pause();
     lv_obj_clear_flag(s_page_att, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
 }
@@ -676,6 +697,8 @@ void flight_instruments_hide(void)
     s_visible = false;
     lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_page_att, LV_OBJ_FLAG_HIDDEN);
+    /* 恢复 EAF 表情动画播放 */
+    emote_engine_resume();
 }
 
 bool flight_instruments_is_visible(void)

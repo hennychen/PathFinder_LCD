@@ -65,6 +65,9 @@ static struct {
 
     /* 手动轮播 */
     int       manual_idx;
+
+    /* 暂停标志（仪表页等覆盖层打开时，停止后台解码/重绘） */
+    bool      paused;
 } s_state;
 
 /* ─────────────────────────────────────────────────────────
@@ -159,7 +162,9 @@ static void play_emote(int idx)
     if (name && s_state.name_label)
         lv_label_set_text(s_state.name_label, emote_friendly_name(name));
 
-    lv_eaf_resume(s_state.eaf_obj);
+    /* 暂停期间不 resume，新表情在 emote_engine_resume() 时才开始播放 */
+    if (!s_state.paused)
+        lv_eaf_resume(s_state.eaf_obj);
     s_state.current_idx = idx;
 
     ESP_LOGI(TAG, "播放 [%d] %s (%zuB)", idx, name ? name : "?", sz);
@@ -346,6 +351,11 @@ void emote_engine_tick(void)
 {
     int64_t now = esp_timer_get_time();
 
+    /* 暂停期间（仪表页覆盖）不评估不切换 */
+    if (s_state.paused) {
+        return;
+    }
+
     /* 手动覆盖期间不自动评估 */
     if (s_state.manual_override_us > 0 && now < s_state.manual_override_us) {
         return;
@@ -416,4 +426,22 @@ const char *emote_engine_get_current_name(void)
     if (s_state.current_idx >= 0)
         return app_emote_assets_get_name((size_t)s_state.current_idx);
     return NULL;
+}
+
+void emote_engine_pause(void)
+{
+    if (s_state.paused) return;
+    s_state.paused = true;
+    if (s_state.eaf_obj)
+        lv_eaf_pause(s_state.eaf_obj);
+    ESP_LOGI(TAG, "EAF 动画已暂停 (覆盖层打开)");
+}
+
+void emote_engine_resume(void)
+{
+    if (!s_state.paused) return;
+    s_state.paused = false;
+    if (s_state.eaf_obj)
+        lv_eaf_resume(s_state.eaf_obj);
+    ESP_LOGI(TAG, "EAF 动画已恢复");
 }
