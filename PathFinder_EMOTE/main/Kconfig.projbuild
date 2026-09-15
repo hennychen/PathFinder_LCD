@@ -34,4 +34,11 @@ menu "Example Configuration"
             启动时扫描 I2C-1 总线并打印所有应答设备地址。
             注意：i2c_master_probe 在 ESP32-S3 上与 RGB LCD DMA 存在耦合干扰，
             调试完成后应关闭。
+
+    config OBD_TWAI_ENABLE
+        bool "Enable OBD-II vehicle data via TWAI/SN65HVD230"
+        default y
+        help
+            通过 SN65HVD230 (TX=GPIO40, RX=GPIO38) 读取车辆 OBD-II 数据。
+            未接模块时自动降级为离线状态，不影响其他功能。
 endmenu

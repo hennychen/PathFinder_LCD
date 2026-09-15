@@ -38,7 +38,11 @@ class ConversationPanel extends StatelessWidget {
           // 标题
           Row(
             children: [
-              Icon(Icons.record_voice_over, size: 20, color: AppColors.envText),
+              const Icon(
+                Icons.record_voice_over,
+                size: 20,
+                color: AppColors.envText,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'AI 对话同步',
@@ -55,7 +59,7 @@ class ConversationPanel extends StatelessWidget {
                   color: AppColors.envPrimary.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(
+                child: const Text(
                   'B板 xiaozhi',
                   style: TextStyle(
                     fontSize: 10,
@@ -87,10 +91,10 @@ class ConversationPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Wrap(
+          const Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: const [
+            children: [
               _DialogStateChip(
                 code: '0',
                 label: 'idle',
@@ -165,7 +169,7 @@ class ConversationPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.divider),
       ),
-      child: Column(
+      child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // B板行
@@ -175,7 +179,7 @@ class ConversationPanel extends StatelessWidget {
             subtitle: 'ES7210 四麦克 → WakeNet → LLM → TTS',
             color: AppColors.envText,
           ),
-          const _FlowArrow(label: 'ESP-NOW / Mesh'),
+          _FlowArrow(label: 'ESP-NOW / Mesh'),
           // A板行
           _FlowNode(
             icon: Icons.tv,
@@ -183,7 +187,7 @@ class ConversationPanel extends StatelessWidget {
             subtitle: '字幕显示 · 表情联动 · BLE 推送',
             color: AppColors.trackerText,
           ),
-          const _FlowArrow(label: 'BLE GATT'),
+          _FlowArrow(label: 'BLE GATT'),
           // 手机行
           _FlowNode(
             icon: Icons.phone_android,

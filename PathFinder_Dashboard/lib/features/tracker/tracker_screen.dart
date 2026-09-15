@@ -98,7 +98,7 @@ class TrackerScreen extends ConsumerWidget {
               child: Center(
                 child: Text(
                   SoundDirection.fromAngle(tracker.soundAngle),
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppColors.trackerText,

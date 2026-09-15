@@ -21,6 +21,8 @@ idf_component_register(
         "web_portal.c"
         "provision_screen.c"
         "flight_instruments.c"
+        "obd_manager.c"
+        "obd_dashboard.c"
         "mesh_common/mesh_protocol.c"
         "mesh_espnow.c"
         "mesh_node.c"
@@ -32,6 +34,7 @@ idf_component_register(
         esp_driver_gpio
         esp_driver_i2c
         esp_driver_uart
+        esp_driver_twai
         esp_adc
         esp_lcd
         esp_timer

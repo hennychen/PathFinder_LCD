@@ -121,10 +121,10 @@ class DeviceOverviewScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.divider),
       ),
-      child: Column(
+      child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             '系统架构',
             style: TextStyle(
               fontSize: 16,
@@ -132,7 +132,7 @@ class DeviceOverviewScreen extends StatelessWidget {
               color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           // 架构流程图
           _ArchNode(
             icon: Icons.mic,
@@ -140,14 +140,14 @@ class DeviceOverviewScreen extends StatelessWidget {
             subtitle: '声源定位 · 人脸追踪 · AI对话 · 云台',
             color: AppColors.envText,
           ),
-          const _ArchConnector(label: 'ESP-NOW / ESP-WIFI-MESH'),
+          _ArchConnector(label: 'ESP-NOW / ESP-WIFI-MESH'),
           _ArchNode(
             icon: Icons.tv,
             title: 'A板 EMOTE',
             subtitle: '传感器 · LCD显示 · 表情 · BLE',
             color: AppColors.warning,
           ),
-          const _ArchConnector(label: 'BLE GATT (C2-C7)'),
+          _ArchConnector(label: 'BLE GATT (C2-C7)'),
           _ArchNode(
             icon: Icons.phone_android,
             title: 'Dashboard App',
@@ -237,14 +237,14 @@ class DeviceOverviewScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.divider),
       ),
-      child: Column(
+      child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Icon(Icons.bluetooth, size: 20, color: AppColors.envText),
-              const SizedBox(width: 8),
-              const Text(
+              SizedBox(width: 8),
+              Text(
                 'BLE GATT 特征值',
                 style: TextStyle(
                   fontSize: 16,
@@ -254,33 +254,33 @@ class DeviceOverviewScreen extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          const _BleCharRow(
+          SizedBox(height: 12),
+          _BleCharRow(
             uuid: 'C2 (fe02)',
             name: '环境数据',
             spec: '20B · temp/humi/press/alt/uv/dust/aqi · @1Hz',
           ),
-          const _BleCharRow(
+          _BleCharRow(
             uuid: 'C3 (fe03)',
             name: '运动数据',
             spec: '8B · pitch/roll/accel/event/conf · @10Hz',
           ),
-          const _BleCharRow(
+          _BleCharRow(
             uuid: 'C4 (fe04)',
             name: '表情状态',
             spec: '15B · emote_id/name/trigger · on-change',
           ),
-          const _BleCharRow(
+          _BleCharRow(
             uuid: 'C5 (fe05)',
             name: 'WiFi 配网',
             spec: 'Write+Notify · JSON 配网指令/状态',
           ),
-          const _BleCharRow(
+          _BleCharRow(
             uuid: 'C6 (fe06)',
             name: '罗盘方位',
             spec: 'heading/valid/source · @10Hz',
           ),
-          const _BleCharRow(
+          _BleCharRow(
             uuid: 'C7 (fe07)',
             name: '追踪聚合',
             spec: '15B · sound_angle/face_info/track_state · @5Hz',
@@ -299,7 +299,7 @@ class DeviceOverviewScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.divider),
       ),
-      child: Column(
+      child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -309,8 +309,8 @@ class DeviceOverviewScreen extends StatelessWidget {
                 size: 20,
                 color: AppColors.trackerText,
               ),
-              const SizedBox(width: 8),
-              const Text(
+              SizedBox(width: 8),
+              Text(
                 'ESP-NOW Mesh 协议',
                 style: TextStyle(
                   fontSize: 16,
@@ -320,8 +320,8 @@ class DeviceOverviewScreen extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          const Text(
+          SizedBox(height: 12),
+          Text(
             '帧格式: [TYPE(1)][SEQ(1)][LEN(1)][PAYLOAD(0-246)][CRC8(1)]',
             style: TextStyle(
               fontSize: 11,
@@ -329,68 +329,68 @@ class DeviceOverviewScreen extends StatelessWidget {
               color: AppColors.textSecondary,
             ),
           ),
-          const SizedBox(height: 12),
-          const _MeshMsgRow(
+          SizedBox(height: 12),
+          _MeshMsgRow(
             code: '0x01',
             name: 'MSG_ANGLE_DATA',
             dir: 'B→A',
             desc: '声源角度 u16×10 + valid',
           ),
-          const _MeshMsgRow(
+          _MeshMsgRow(
             code: '0x02',
             name: 'MSG_TRACK_STATE',
             dir: 'B→A',
             desc: '追踪状态机',
           ),
-          const _MeshMsgRow(
+          _MeshMsgRow(
             code: '0x03',
             name: 'MSG_FACE_INFO',
             dir: 'B→A',
             desc: '人脸 found/cx/cy/w/h',
           ),
-          const _MeshMsgRow(
+          _MeshMsgRow(
             code: '0x04',
             name: 'MSG_SERVO_CTRL',
             dir: 'A→B',
             desc: 'Pan/Tilt 舵机角度',
           ),
-          const _MeshMsgRow(
+          _MeshMsgRow(
             code: '0x10',
             name: 'MSG_HEARTBEAT',
             dir: 'B→A',
             desc: '心跳 @500ms',
           ),
-          const _MeshMsgRow(
+          _MeshMsgRow(
             code: '0x20',
             name: 'MSG_SENSOR_DATA',
             dir: 'A→B',
             desc: '传感器聚合包 ~72B',
           ),
-          const _MeshMsgRow(
+          _MeshMsgRow(
             code: '0x21',
             name: 'MSG_DIALOG_STATE',
             dir: 'B→A',
             desc: '对话状态 idle/listen/speak',
           ),
-          const _MeshMsgRow(
+          _MeshMsgRow(
             code: '0x22',
             name: 'MSG_EMOTION',
             dir: 'B→A',
             desc: 'LLM 情感标签',
           ),
-          const _MeshMsgRow(
+          _MeshMsgRow(
             code: '0x23',
             name: 'MSG_CHAT_TEXT',
             dir: 'B→A',
             desc: '字幕文本 UTF-8',
           ),
-          const _MeshMsgRow(
+          _MeshMsgRow(
             code: '0x30',
             name: 'MSG_WIFI_CONFIG',
             dir: 'A→B',
             desc: 'WiFi 配网 JSON',
           ),
-          const _MeshMsgRow(
+          _MeshMsgRow(
             code: '0x31',
             name: 'MSG_WIFI_STATUS',
             dir: 'B→A',

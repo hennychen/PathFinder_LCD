@@ -147,6 +147,10 @@ static void imu_task(void *arg)
     /* 初始延迟 200ms 等传感器稳定 */
     vTaskDelay(pdMS_TO_TICKS(200));
 
+    /* 缓存上一轮有效数据，避免单次 I2C 失败就丢失全部快照 */
+    static hmc5883l_data_t last_valid_compass = {0};
+    static bool has_valid_compass = false;
+
     while (1) {
         imu_snapshot_t snap;
         memset(&snap, 0, sizeof(snap));
@@ -157,6 +161,18 @@ static void imu_task(void *arg)
             snap.imu = data;
         } else {
             ESP_LOGW(TAG, "MPU-9250/6500 读取失败");
+        }
+
+        /* 诊断：每 10 秒输出一次磁力计驱动状态 */
+        {
+            static int64_t last_diag_us = 0;
+            int64_t now_us = esp_timer_get_time();
+            if (now_us - last_diag_us > 10000000) {
+                last_diag_us = now_us;
+                ESP_LOGW(TAG, "罗盘诊断: HMC=%d QMC=%d MPU_mag=%d",
+                         drv_hmc5883l_is_ready(), drv_qmc5883l_is_ready(),
+                         snap.imu.mag_valid);
+            }
         }
 
         /* 2. 优先读取 HMC5883L 独立磁力计
@@ -198,6 +214,17 @@ static void imu_task(void *arg)
             snap.compass.heading = heading;
             snap.compass.valid    = true;
             snap.compass.source   = HMC5883L_SOURCE_AK8963;
+        }
+
+        /* 所有磁力计 fallback 均失败时，沿用上一轮有效罗盘数据
+         * 避免单次 I2C 超时导致 UI 显示 N/A 闪烁 */
+        if (!snap.compass.valid && has_valid_compass) {
+            snap.compass = last_valid_compass;
+        }
+        /* 缓存本轮有效数据供下一轮使用 */
+        if (snap.compass.valid) {
+            last_valid_compass = snap.compass;
+            has_valid_compass = true;
         }
 
         snap.timestamp_us = esp_timer_get_time();

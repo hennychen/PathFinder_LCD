@@ -19,6 +19,7 @@
 #include "sensor_manager.h"
 #include "motion_engine.h"
 #include "emote_engine.h"
+#include "obd_dashboard.h"
 #include "flight_instruments.h"
 
 static const char *TAG = "flight_inst";
@@ -552,12 +553,15 @@ static void create_attitude_page(lv_obj_t *parent)
 
 /* ===================== 事件回调 ===================== */
 
-/* 姿态页点击：退出回表情页（校准遮罩打开时禁止退出） */
+/* 姿态页点击：轮转到 OBD 仪表页（校准遮罩打开时禁止退出） */
 static void att_page_click_cb(lv_event_t *e)
 {
     (void)e;
     if (s_calib_overlay || s_calib_mbox) return;
     flight_instruments_hide();
+#if CONFIG_OBD_TWAI_ENABLE
+    obd_dashboard_show();   /* 轮转到 OBD 仪表页（离线时显示“OBD 未连接”占位） */
+#endif
 }
 
 /* 姿态页长按：弹出校准确认对话框 */
@@ -799,7 +803,17 @@ void flight_instruments_update(void)
          * sensor_manager 已在 imu_snapshot.compass 中完成统一封装
          * compass.valid 为 true 时，heading 字段可直接使用 */
         imu_snapshot_t imu;
-        if (sensor_manager_get_imu(&imu) == ESP_OK && imu.compass.valid) {
+        esp_err_t imu_ret = sensor_manager_get_imu(&imu);
+        /* 诊断：每5秒输出一次 UI 侧读到的指南针状态 */
+        {
+            static int64_t last_fi_diag = 0;
+            if (now - last_fi_diag > 5000000) {
+                last_fi_diag = now;
+                ESP_LOGW(TAG, "UI罗盘: ret=%s valid=%d hdg=%.0f",
+                         esp_err_to_name(imu_ret), imu.compass.valid, imu.compass.heading);
+            }
+        }
+        if (imu_ret == ESP_OK && imu.compass.valid) {
             /* 更新中央数字读数 (0~360°) */
             snprintf(buf, sizeof(buf), "%03.0f°", imu.compass.heading);
             lv_label_set_text(s_compass_hdg, buf);

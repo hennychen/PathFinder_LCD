@@ -39,6 +39,8 @@
 #include "web_portal.h"
 #include "provision_screen.h"
 #include "flight_instruments.h"
+#include "obd_manager.h"
+#include "obd_dashboard.h"
 #include "cJSON.h"
 #include "mesh_node.h"
 #include "mesh_espnow.h"
@@ -1417,6 +1419,11 @@ static void ui_create(lv_disp_t *disp)
     /* ---- 飞行仪表盘覆盖层 ---- */
     flight_instruments_create(scr);
 
+#if CONFIG_OBD_TWAI_ENABLE
+    /* ---- OBD 车辆仪表覆盖层 ---- */
+    obd_dashboard_create(scr);
+#endif
+
     /* ---- 中文字幕条 ---- */
     subtitle_view_init(scr);
 
@@ -1452,6 +1459,9 @@ static void lvgl_task(void *arg)
             emote_engine_tick_locked();
             subtitle_view_tick();         /* 字幕自动淡出 */
             flight_instruments_update();
+#if CONFIG_OBD_TWAI_ENABLE
+            obd_dashboard_update();
+#endif
             lvgl_unlock();
         }
 
@@ -1564,8 +1574,30 @@ static void ble_notify_task(void *arg)
 
 static void sensor_uplink_task(void *arg)
 {
-    /* 不等待 Mesh，直接通过 UART 发送（UART0 console 已初始化） */
-    ESP_LOGI(TAG, "Sensor uplink task started (2Hz, UART0+ESP-NOW)");
+    /* 尝试安装 UART0 驱动用于板间传感器帧传输
+     * 若失败（被 console 占用）则静默跳过 UART，仅依赖 ESP-NOW */
+    bool uart_ok = false;
+    uart_config_t uart_cfg = {
+        .baud_rate  = 115200,
+        .data_bits  = UART_DATA_8_BITS,
+        .parity     = UART_PARITY_DISABLE,
+        .stop_bits  = UART_STOP_BITS_1,
+        .flow_ctrl  = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_APB,
+    };
+    esp_err_t uart_ret = uart_driver_install(UART_NUM_0, 256, 256, 0, NULL, 0);
+    if (uart_ret == ESP_OK) {
+        uart_param_config(UART_NUM_0, &uart_cfg);
+        uart_set_pin(UART_NUM_0, 43, 44, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+        uart_ok = true;
+        ESP_LOGI(TAG, "UART0 driver installed for sensor uplink");
+    } else {
+        ESP_LOGW(TAG, "UART0 driver unavailable (%s), sensor uplink via ESP-NOW only",
+                 esp_err_to_name(uart_ret));
+    }
+
+    ESP_LOGI(TAG, "Sensor uplink task started (2Hz, %s)",
+             uart_ok ? "UART0+ESP-NOW" : "ESP-NOW only");
 
     const TickType_t period = pdMS_TO_TICKS(500);  /* 2Hz */
     while (1) {
@@ -1608,16 +1640,18 @@ static void sensor_uplink_task(void *arg)
         if (has_data) {
             pkt.timestamp_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
 
-            /* ── UART0 帧发送 ── */
-            uint8_t frame[5 + sizeof(sensor_packet_t)];
-            frame[0] = SENSOR_FRAME_HEAD0;
-            frame[1] = SENSOR_FRAME_HEAD1;
-            frame[2] = MSG_SENSOR_DATA;
-            frame[3] = (uint8_t)sizeof(sensor_packet_t);
-            memcpy(&frame[4], &pkt, sizeof(sensor_packet_t));
-            frame[4 + sizeof(sensor_packet_t)] =
-                mesh_crc8(&frame[2], 2 + sizeof(sensor_packet_t));
-            uart_write_bytes(UART_NUM_0, (const char*)frame, sizeof(frame));
+            /* ── UART0 帧发送（驱动可用时） ── */
+            if (uart_ok) {
+                uint8_t frame[5 + sizeof(sensor_packet_t)];
+                frame[0] = SENSOR_FRAME_HEAD0;
+                frame[1] = SENSOR_FRAME_HEAD1;
+                frame[2] = MSG_SENSOR_DATA;
+                frame[3] = (uint8_t)sizeof(sensor_packet_t);
+                memcpy(&frame[4], &pkt, sizeof(sensor_packet_t));
+                frame[4 + sizeof(sensor_packet_t)] =
+                    mesh_crc8(&frame[2], 2 + sizeof(sensor_packet_t));
+                uart_write_bytes(UART_NUM_0, (const char*)frame, sizeof(frame));
+            }
 
             /* ── ESP-NOW 发送（如果可用） ── */
             if (mesh_espnow_is_ready()) {
@@ -1781,6 +1815,9 @@ void app_main(void)
 
     /* ---- 传感器数据 Mesh 上报任务 (A板 → B板 2Hz) ---- */
     xTaskCreate(sensor_uplink_task, "SENS_UL", 4 * 1024, NULL, 3, NULL);
+
+    /* ---- OBD-II 车辆数据管理器 (TWAI @Core1，未接模块时自动离线) ---- */
+    obd_manager_init();
 
     ESP_LOGI(TAG, "PathFinder EMOTE 初始化完成!");
 }

@@ -216,7 +216,7 @@ class _WifiSetupScreenState extends ConsumerState<WifiSetupScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('B板已连接到 WiFi', style: const TextStyle(fontSize: 15)),
+            const Text('B板已连接到 WiFi', style: TextStyle(fontSize: 15)),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

@@ -386,6 +386,8 @@ pkt.flags |= 0x20;  // Dust available
 | GPIO3 | ADC1_CH2 (UV sensor) | drv_uv_adc |
 | GPIO8 | ADC1_CH7 (UV sensor) | drv_uv_adc |
 | GPIO39 | 粉尘 LED 脉冲控制 | drv_dust_gp2y |
+| GPIO40 | TWAI TX (CAN) | obd_manager → SN65HVD230 CTX |
+| GPIO38 | TWAI RX (CAN) | obd_manager ← SN65HVD230 CRX |
 | GPIO13 | I2C SDA | AHT20/BMP280/QMC5883L |
 | GPIO20 | I2C SCL | AHT20/BMP280/QMC5883L |
 | GPIO0–7 | RGB LCD 并行数据 | ST7701 LCD |
@@ -428,7 +430,88 @@ python -m esptool --chip esp32s3 -p /dev/cu.wchusbserial5AF61192361 \
 
 ---
 
-## 7. 参考文档
+## 7. 车辆 OBD-II 接入
+
+通过 SN65HVD230 CAN 收发器 + ESP32-S3 TWAI 控制器，以 ISO 15765-4（CAN 11-bit / 500 kbps）
+协议读取车辆标准 OBD-II 数据，在 OBD 仪表页显示转速/车速/水温等。
+页面轮转：表情页 → (点击) → 飞行仪表页 → (点击) → OBD 仪表页 → (点击) → 回表情页。
+
+### 7.1 SN65HVD230 ↔ ESP32-S3 接线表
+
+```
+ESP32-S3 (TK021F2699)          SN65HVD230 模块
+┌─────────────────┐            ┌──────────────┐
+│ 3V3  ───────────┼────────────┤ VCC (3.3V)   │
+│ GND  ───────────┼────────────┤ GND          │
+│ GPIO40 (TWAI TX)┼────────────┤ CTX / D      │
+│ GPIO38 (TWAI RX)┼────────────┤ CRX / R      │
+└─────────────────┘            │ CANH ────────┼──→ OBD DLC Pin 6
+                               │ CANL ────────┼──→ OBD DLC Pin 14
+                               └──────────────┘
+```
+
+**注意事项：**
+
+1. SN65HVD230 必须 **3.3V 供电**（芯片非 5V 器件）
+2. 模块板载 120Ω 终端电阻建议断开（车辆总线两端已有终端，等效 60Ω）；
+   若为不可拆模块可先直接测试，通信不稳再处理
+3. 双绞线连接 CANH/CANL，长度尽量短（<1m）
+4. GPIO38/GPIO40 为全代码零引用的空闲引脚；**禁用 GPIO12/14**（实测被 LCD 信号间接占用，接外设即黑屏）
+5. **检查 RS 脚（Pin 8）**：必须接地或经 10kΩ 下拉（多数模块板载 10kΩ，默认斜率控制模式，可直接用）。
+   若 RS 悬空或被拉高（>0.75×VCC）芯片进入 Standby 只听模式，**只能收不能发**，表现为永久离线
+
+### 7.2 OBD-II DLC（车内 16 针诊断口）接线图
+
+```
+OBD-II 母座（面向插口视角）
+ ┌───────────────────────────┐
+  \  1  2  3  4  5  6  7  8 /      Pin 4  = 底盘地 (Chassis GND)
+   \                       /       Pin 5  = 信号地 (Signal GND)
+    \ 9 10 11 12 13 14 15 16/      Pin 6  = CAN_H (ISO 15765-4)
+     └─────────────────────┘       Pin 14 = CAN_L (ISO 15765-4)
+                                   Pin 16 = +12V 常电 (蓄电池)
+```
+
+- **CANH → Pin 6，CANL → Pin 14**（2008 年后车辆强制支持 CAN 500kbps）
+- **共地**：若 ESP32 独立供电（充电宝），须将 GND 与 Pin 4/5 连通；
+  若从 Pin 16 取电（12V→5V DC-DC 降压模块给开发板 5V 输入），天然共地。
+  Pin 16 为常电，熄火后需拔下以免耗蓄电池
+
+### 7.3 支持的 PID 列表
+
+| PID | 项目 | 轮询周期 | 公式 |
+|-----|------|---------|------|
+| 0x0C | 发动机转速 | 500ms (2Hz) | (256A+B)/4 [rpm]，EMA α=0.3 |
+| 0x0D | 车速 | 500ms (2Hz) | A [km/h] |
+| 0x05 | 冷却液温度 | 2000ms | A-40 [°C] |
+| 0x11 | 节气门开度 | 1000ms | A×100/255 [%] |
+| 0x42 | 控制模块电压 | 2000ms | (256A+B)/1000 [V] |
+| 0x0F | 进气温度 | 2000ms | A-40 [°C] |
+
+### 7.4 软件架构
+
+- **obd_manager.c**：TWAI 驱动 (IDF 6.0 `esp_driver_twai` node API)，串行请求-响应
+  （**物理寻址 ID=0x7E0** 仅请求 ECM，硬件过滤只收 0x7E8~0x7EF）；任务绑 Core 1，
+  TWAI 中断与 Core 0 的 RGB LCD DMA 中断物理隔离
+- **总线安全设计**：
+  - 帧间保护间隔 20ms，避免连续请求淹没 CAN 总线
+  - 总请求 ≤6 帧/s（总线负载率 <1%），不干扰 ECU 自身通信
+  - 连续 TX 失败 3 次自动退避 1s
+  - bus-off 后强制冷却 5s 再恢复
+  - 离线探测周期 3s，降低对车辆 CAN 总线的干扰
+- **obd_dashboard.c**：OBD 仪表覆盖层（中央转速表 + 车速/水温/电压），
+  三级节流 50/200/1000ms
+- **离线降级**：连续 10 次超时转离线，每 3s 发探测帧（PID 0x00）自动恢复；
+  未接模块时仪表页显示“OBD 未连接”，不影响其他功能
+- **Kconfig 开关**：`Example Configuration → Enable OBD-II vehicle data via TWAI/SN65HVD230`
+
+> ⚠️ **车辆兼容性说明**：原设计使用 0x7DF 功能寻址广播请求（所有 ECU 被迫响应），
+> 在部分车型（如斯巴鲁傲虎 2011 款）上会触发 U 类通信故障码。
+> 现已改为 0x7E0 物理寻址（仅 ECM 响应）+ 低频轮询，显著降低对车辆总线的干扰。
+
+---
+
+## 8. 参考文档
 
 | 文档 | 来源 | 链接 |
 |------|------|------|
@@ -442,7 +525,7 @@ python -m esptool --chip esp32s3 -p /dev/cu.wchusbserial5AF61192361 \
 
 ---
 
-## 8. 变更日志
+## 9. 变更日志
 
 ### 2026-07-23: ADC1 handle 共享 + UI 更新 + 烧录修正
 
